@@ -7,6 +7,7 @@ import EmployeeDashboard from './pages/EmployeeDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 
 function AppInner() {
+  const { dispatch } = useApp();
   const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState(null);
   const [userData, setUserData] = useState(null);
@@ -57,10 +58,16 @@ function AppInner() {
       setAuthReady(true);
     });
 
-    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, sess) => {
-      setSession(sess);
-      setUserData(resolveUserData(sess));
-      if (!sess) setScreenView('auto');
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event, sess) => {
+      if (event === 'SIGNED_OUT' || !sess) {
+        dispatch({ type: 'RESET' }); // wipe state so next user starts clean
+        setSession(null);
+        setUserData(null);
+        setScreenView('auto');
+      } else {
+        setSession(sess);
+        setUserData(resolveUserData(sess));
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -75,6 +82,9 @@ function AppInner() {
 
   const handleSignOut = async () => {
     await sb.auth.signOut();
+    dispatch({ type: 'RESET' }); // ← clear all cached state for next user
+    setSession(null);
+    setUserData(null);
     setScreenView('auto');
   };
 

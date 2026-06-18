@@ -118,7 +118,12 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
           <button className="btn btn-sm btn-outline" onClick={onSwitchEmployee}>👤 Employee View</button>
-          <button className="icon-btn sign-out-btn" onClick={onSignOut} title="Sign out">⎋</button>
+
+<button className="btn btn-s btn-sm" onClick={onSignOut} style={{color:'var(--red)',borderColor:'var(--red)',background:'var(--rl)',gap:6}} title="Sign out">
+  ⏻ Sign Out
+</button>
+Change it in both files — same line in both.
+
         </div>
       </header>
 

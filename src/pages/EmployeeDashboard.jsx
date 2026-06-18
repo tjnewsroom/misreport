@@ -80,7 +80,12 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
           {isAdmin && onSwitchAdmin && (
             <button className="btn btn-sm btn-outline" onClick={onSwitchAdmin}>🛡 Admin View</button>
           )}
-          <button className="icon-btn" onClick={onSignOut} title="Sign out">⎋</button>
+
+<button className="btn btn-s btn-sm" onClick={onSignOut} style={{color:'var(--red)',borderColor:'var(--red)',background:'var(--rl)',gap:6}} title="Sign out">
+  ⏻ Sign Out
+</button>
+Change it in both files — same line in both.
+
         </div>
       </header>
 

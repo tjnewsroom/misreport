@@ -122,7 +122,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
 <button className="btn btn-s btn-sm" onClick={onSignOut} style={{color:'var(--red)',borderColor:'var(--red)',background:'var(--rl)',gap:6}} title="Sign out">
   ⏻ Sign Out
 </button>
-Change it in both files — same line in both.
+
 
         </div>
       </header>

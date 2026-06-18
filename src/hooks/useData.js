@@ -133,7 +133,7 @@ export function useData() {
     const uuid = getEmpUUID(empCode);
     if (!uuid) { toast('UUID not found for: ' + empCode, 'er'); return false; }
     if (item._id) {
-      // UPDATE existing row
+      // UPDATE existing row — safe, always idempotent
       const { error } = await sb.from('nle_daily_entries').update({
         news_type: item.type, description: item.desc || '',
         start_time: item.startTime || null, end_time: item.endTime || null, manual_mins: item.manualMins || 0
@@ -141,13 +141,31 @@ export function useData() {
       if (error) { toast('Save failed: ' + error.message, 'er'); return false; }
       return true;
     } else {
-      // INSERT new row — return the new _id so caller can update state
+      // INSERT new row
+      // Extra guard: check if identical row already exists in DB within last 5 seconds
+      // This catches any race condition that slips past the useRef lock
+      const { data: existing } = await sb.from('nle_daily_entries')
+        .select('id')
+        .eq('emp_id', uuid)
+        .eq('date', date)
+        .eq('news_type', item.type)
+        .eq('start_time', item.startTime || '')
+        .eq('end_time', item.endTime || '')
+        .gte('created_at', new Date(Date.now() - 5000).toISOString())
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        // Row already exists from a duplicate call — reuse its id
+        console.warn('🔒 Duplicate INSERT blocked — reusing existing row', existing[0].id);
+        item._id = existing[0].id;
+        return true;
+      }
+
       const { data, error } = await sb.from('nle_daily_entries').insert({
         emp_id: uuid, date, news_type: item.type, description: item.desc || '',
         start_time: item.startTime || null, end_time: item.endTime || null, manual_mins: item.manualMins || 0
       }).select().single();
       if (error) { toast('Save failed: ' + error.message, 'er'); return false; }
-      // Write _id onto item object (mutation as convenience for caller)
       item._id = data.id;
       return true;
     }

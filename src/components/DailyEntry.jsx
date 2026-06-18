@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import { useApp } from '../hooks/useApp';
 import { useData } from '../hooks/useData';
 import { useToast } from '../hooks/useToast';
@@ -95,6 +95,10 @@ function AttendanceCard({ empId, dept, selDate }) {
 export default function DailyEntry({ empId, dept, selDate }) {
   const { state, dispatch } = useApp();
   const { saveNLEItem, deleteNLEItem, saveProdEntry } = useData();
+  const [savingIdx, setSavingIdx] = useState(null); // for UI disabled state only
+  const [addingItem, setAddingItem] = useState(false); // for UI disabled state only
+  const isAddingRef = useRef(false);   // ← synchronous lock, checked BEFORE async
+  const isSavingRef = useRef(false);   // ← synchronous lock
   const toast = useToast();
   const [search, setSearch] = useState('');
 
@@ -124,17 +128,21 @@ export default function DailyEntry({ empId, dept, selDate }) {
   };
 
   const addItem = async () => {
+    if (isAddingRef.current) return; // synchronous check — blocks before any await
+    isAddingRef.current = true;
+    setAddingItem(true);
     if (items.length) {
       const last = items[items.length-1];
       if (!last.startTime || !last.endTime) {
         toast('⚠️ IN and OUT time required for Task '+items.length+' before adding new.', 'er');
         return;
       }
-      // Save last item and get back the _id from DB
-      const savedOk = await saveNLEItem(empId, selDate, last);
-      if (!savedOk) return;
-      // ✅ Update state with the _id that saveNLEItem wrote onto `last`
-      // so subsequent saves UPDATE instead of INSERT (no duplicates)
+      // If last item already has _id it was saved — skip re-saving to prevent duplicate
+      if (!last._id) {
+        const savedOk = await saveNLEItem(empId, selDate, last);
+        if (!savedOk) return;
+      }
+      // ✅ Update state with _id (handles both new save and already-saved cases)
       const updatedItems = items.map((it, i) =>
         i === items.length - 1 ? { ...it, _id: last._id } : it
       );
@@ -144,21 +152,26 @@ export default function DailyEntry({ empId, dept, selDate }) {
       const newItems = [{ type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
       dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
     }
+    isAddingRef.current = false;
+    setAddingItem(false);
   };
 
   const saveItem = async (idx) => {
+    if (isSavingRef.current) return; // synchronous check
+    isSavingRef.current = true;
     const it = items[idx];
     if (!it.startTime || !it.endTime) { toast('⚠️ IN and OUT time required.', 'er'); return; }
     if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
+    setSavingIdx(idx);
     const ok = await saveNLEItem(empId, selDate, it);
     if (ok) {
-      // ✅ Propagate _id back into state so future saves always UPDATE not INSERT
-      if (it._id) {
-        const updatedItems = items.map((item, i) =>
-          i === idx ? { ...item, _id: it._id } : item
-        );
-        dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:updatedItems }});
-      }
+      // ✅ Always propagate _id back into state after save
+      // it._id is written by saveNLEItem (INSERT sets it, UPDATE keeps it)
+      // We ALWAYS dispatch so state stays in sync regardless of new/existing
+      const updatedItems = items.map((item, i) =>
+        i === idx ? { ...item, _id: it._id } : item
+      );
+      dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:updatedItems }});
       toast('✓ Saved');
     }
   };
@@ -255,14 +268,18 @@ export default function DailyEntry({ empId, dept, selDate }) {
                         <button onClick={()=>setNow(realIdx,'endTime')} style={{ background:'var(--gl)', border:'none', borderRadius:5, padding:'2px 6px', fontSize:10, color:'var(--green)', cursor:'pointer', fontWeight:700 }}>Now</button>
                       </div>
                       {mins !== null && <span style={{ fontSize:12, fontWeight:700, color:'var(--green)', fontFamily:"'JetBrains Mono'", background:'var(--gl)', padding:'3px 10px', borderRadius:6 }}>⏱ {fmtMin(mins)}</span>}
-                      <button className="btn btn-p btn-sm" onClick={()=>saveItem(realIdx)}>💾 Save</button>
+                      <button className="btn btn-p btn-sm" onClick={()=>saveItem(realIdx)} disabled={savingIdx===realIdx || addingItem}>
+                        {savingIdx===realIdx ? '⏳…' : '💾 Save'}
+                      </button>
                     </div>
                   </div>
                 </div>
               );
             })
           )}
-          <button className="btn btn-p" style={{ width:'100%', padding:11, marginTop:6 }} onClick={addItem}>＋ Add News Item</button>
+          <button className="btn btn-p" style={{ width:'100%', padding:11, marginTop:6 }} onClick={addItem} disabled={addingItem}>
+          {addingItem ? '⏳ Saving…' : '＋ Add News Item'}
+        </button>
           {items.length > 0 && (() => {
             const tMins = items.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
             const tWpts = items.reduce((s,it)=>{ const nt=NEWS_TYPES.find(n=>n.key===it.type)||{weight:1}; return s+nt.weight; },0);

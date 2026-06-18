@@ -1,4 +1,3 @@
-import tjLogo from '../assets/tj-logo.png';
 import { useState, useEffect } from 'react';
 import { useApp } from '../hooks/useApp';
 import { useData } from '../hooks/useData';

@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
+import { sb } from '../lib/supabase';
 import { useApp } from '../hooks/useApp';
 import { useData } from '../hooks/useData';
 import { useToast } from '../hooks/useToast';
@@ -299,124 +300,158 @@ export function ProducersPage({ selDate }) {
 // ── Task Search ───────────────────────────────────────────────────────────────
 export function TaskSearchPage({ empId: filterEmpId }) {
   const { state } = useApp();
-  const [q, setQ] = useState('');
+  const [q, setQ]             = useState('');
   const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
 
   const filterEmp  = filterEmpId ? state.emps.find(e => String(e.id) === String(filterEmpId)) : null;
   const filterDept = filterEmp?.dept || null;
-  // News Producer: sees ALL NLE editors tasks (like admin)
-  // NLE Editor: own tasks only
-  // Voice Over: own prod entries only
-  // Admin (no filterEmpId): all
-  const isNewsProducer = filterDept === 'News Producer';
-  const isVoiceOver    = filterDept === 'Voice Over';
-  const isNLEEditor    = filterDept === 'NLE Editor';
   const isAdmin        = !filterEmpId;
+  const isNewsProducer = filterDept === 'News Producer';
+  const isNLEEditor    = filterDept === 'NLE Editor';
+  // isVoiceOver: can only search own prod entries — not implemented here (no NLE access)
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     const term = q.trim().toLowerCase();
-    const found = [];
+    setLoading(true);
+    setError('');
+    setResults(null);
 
-    // ── Search NLE daily tasks ──────────────────────────────────────────────
-    // Admin → all editors | News Producer → all editors | NLE Editor → own only
-    if (isAdmin || isNewsProducer || isNLEEditor) {
-      Object.entries(state.daily).forEach(([empId, byDate]) => {
-        const emp = state.emps.find(e => e.id === empId);
-        if (!emp || emp.dept !== 'NLE Editor') return;
-        // NLE Editor sees own only
-        if (isNLEEditor && String(empId) !== String(filterEmpId)) return;
-        Object.entries(byDate).forEach(([date, items]) => {
-          (items || []).forEach(item => {
-            const nt = NEWS_TYPES.find(n => n.key === item.type);
-            const hay = [nt?.label || '', item.desc || '', item.type, emp.name, date].join(' ').toLowerCase();
-            if (!term || hay.includes(term)) {
-              found.push({ empName: emp.name, empId, dept: emp.dept, date, ...item, nt, rowType: 'nle' });
-            }
-          });
-        });
-      });
-    }
+    try {
+      // ── Build employee UUID→name+code map from already-loaded emps ──────
+      const empMap = {}; // uuid → { name, empCode, dept }
+      state.emps.forEach(e => { empMap[e._uuid] = { name: e.name, empCode: e.id, dept: e.dept }; });
 
-    // ── Search Producer/VO prod entries ────────────────────────────────────
-    // Admin → all | Voice Over → own only
-    if (isAdmin || isVoiceOver) {
-      Object.entries(state.prodDaily).forEach(([empId, byDate]) => {
-        const emp = state.emps.find(e => e.id === empId);
-        if (!emp) return;
-        if (emp.dept !== 'News Producer' && emp.dept !== 'Voice Over') return;
-        if (isVoiceOver && String(empId) !== String(filterEmpId)) return;
-        const fields = emp.dept === 'News Producer' ? PROD_FIELDS : VO_FIELDS;
-        Object.entries(byDate).forEach(([date, pd]) => {
-          const hasData = fields.some(f => parseInt(pd[f.key]) > 0);
-          if (!hasData) return;
-          const summary = fields.filter(f => parseInt(pd[f.key]) > 0).map(f => `${f.label} ${pd[f.key]}`).join(' ');
-          const hay = [emp.name, emp.dept, date, summary, pd.notes || ''].join(' ').toLowerCase();
-          if (!term || hay.includes(term)) {
-            found.push({ empName: emp.name, empId, dept: emp.dept, date, rowType: 'prod', pd, fields, notes: pd.notes });
+      // ── Fetch nle_daily_entries fresh from Supabase ──────────────────────
+      // Admin + News Producer → ALL editors
+      // NLE Editor → own entries only (filter by emp UUID)
+      let query = sb
+        .from('nle_daily_entries')
+        .select('id, emp_id, date, news_type, description, start_time, end_time')
+        .order('date', { ascending: false })
+        .limit(5000);
+
+      if (isNLEEditor) {
+        // Find own UUID
+        const myUUID = filterEmp?._uuid;
+        if (!myUUID) {
+          // Fallback: look up UUID via employees table
+          const { data: empRow } = await sb
+            .from('employees')
+            .select('id')
+            .eq('emp_code', filterEmpId)
+            .single();
+          if (empRow) query = query.eq('emp_id', empRow.id);
+        } else {
+          query = query.eq('emp_id', myUUID);
+        }
+      }
+
+      // Apply text search if term provided
+      if (term) {
+        query = query.or(
+          `description.ilike.%${term}%,news_type.ilike.%${term}%`
+        );
+      }
+
+      const { data: rows, error: dbErr } = await query;
+      if (dbErr) { setError('Search failed: ' + dbErr.message); setLoading(false); return; }
+
+      // ── Map results to display format ─────────────────────────────────────
+      const found = (rows || [])
+        .map(r => {
+          const emp = empMap[r.emp_id];
+          // Skip if not NLE editor dept (for admin/producer searching all NLE)
+          if (emp && emp.dept !== 'NLE Editor') return null;
+          // For term search on emp name (not in DB query — filter client side)
+          const nt = NEWS_TYPES.find(n => n.key === r.news_type);
+          if (term && emp) {
+            const hay = [emp.name, r.news_type, nt?.label || '', r.description || ''].join(' ').toLowerCase();
+            if (!hay.includes(term)) return null;
           }
-        });
-      });
-    }
+          return {
+            empName: emp?.name || r.emp_id,
+            empCode: emp?.empCode || '',
+            dept:    emp?.dept || 'NLE Editor',
+            date:    r.date,
+            type:    r.news_type,
+            desc:    r.description || '',
+            startTime: r.start_time?.slice(0,5) || '',
+            endTime:   r.end_time?.slice(0,5)   || '',
+            nt,
+          };
+        })
+        .filter(Boolean);
 
-    found.sort((a, b) => b.date.localeCompare(a.date));
-    setResults(found);
-    console.log('🔍 Search results:', found.length, 'found for term:', term);
+      setResults(found);
+    } catch (e) {
+      setError('Unexpected error: ' + e.message);
+    }
+    setLoading(false);
   };
 
   const exportXLS = () => {
     if (!results?.length) return;
-    const rows = [['Date', 'Employee', 'Dept', 'Type / Activity', 'Description / Details', 'Start', 'End']];
-    results.forEach(r => {
-      if (r.rowType === 'nle') {
-        rows.push([r.date, r.empName, r.dept, r.nt?.label || r.type, r.desc || '', r.startTime || '', r.endTime || '']);
-      } else {
-        const detail = r.fields.filter(f => parseInt(r.pd?.[f.key]) > 0).map(f => `${f.label}:${r.pd[f.key]}`).join(', ');
-        rows.push([r.date, r.empName, r.dept, r.dept + ' Activities', detail, '', '']);
-      }
-    });
+    const rows = [['Date','Employee','ID','News Type','Description','Start','End']];
+    results.forEach(r => rows.push([r.date, r.empName, r.empCode, r.nt?.label||r.type, r.desc, r.startTime, r.endTime]));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Results');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Search Results');
     XLSX.writeFile(wb, `TJ_Search_${todayStr()}.xlsx`);
   };
+
+  const roleLabel = isAdmin        ? 'All NLE Editors — live from database'
+                  : isNewsProducer ? 'All NLE Editors — live from database'
+                  : isNLEEditor    ? 'Your tasks — live from database'
+                  :                  'Task search';
 
   return (
     <div style={{ padding: 20 }}>
       <div className="sec-hdr">
         <div>
           <div className="sec-title">🔍 Task Search</div>
-          <div className="sec-sub">
-            {isNewsProducer ? '📋 Search all NLE Editor tasks' :
-             isVoiceOver    ? '🎙 Search your Voice Over entries' :
-             isNLEEditor    ? '📰 Search your NLE tasks' :
-             'Search all tasks across all staff and dates'}
-          </div>
+          <div className="sec-sub">{roleLabel}</div>
         </div>
-        {results?.length > 0 && <button className="btn btn-p btn-sm" onClick={exportXLS}>📊 Export</button>}
+        {results?.length > 0 && (
+          <button className="btn btn-p btn-sm" onClick={exportXLS}>📊 Export Excel</button>
+        )}
       </div>
 
       {isNewsProducer && (
-        <div style={{ marginBottom: 12, padding: '10px 16px', background: 'var(--bl)', borderRadius: 10, fontSize: '.82rem', color: 'var(--blue)', fontWeight: 600, border: '1px solid rgba(35,97,212,.2)' }}>
-          📋 You can search across <strong>all NLE Editors'</strong> tasks — by news type, description, or editor name.
+        <div style={{ marginBottom: 14, padding: '10px 16px', background: 'var(--bl)', borderRadius: 10, fontSize: '.82rem', color: 'var(--blue)', fontWeight: 600, border: '1px solid rgba(35,97,212,.2)' }}>
+          📋 Searching across <strong>all NLE Editors'</strong> tasks. Results fetched fresh from database.
         </div>
       )}
 
       <div className="card">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <input className="inp"
-            placeholder="Search news type, description, editor name…"
+          <input
+            className="inp"
+            placeholder="Search news type, description, editor name… (leave empty for all)"
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             style={{ flex: 1, minWidth: 200 }}
           />
-          <button className="btn btn-p" onClick={handleSearch}>🔍 Search</button>
+          <button className="btn btn-p" onClick={handleSearch} disabled={loading}>
+            {loading ? <><span className="spinner" style={{width:14,height:14,borderWidth:2}}/> Searching…</> : '🔍 Search'}
+          </button>
         </div>
 
-        {results !== null && (
+        {error && (
+          <div style={{ padding: '10px 14px', background: 'var(--rl)', color: 'var(--red)', borderRadius: 8, marginBottom: 12, fontSize: '.82rem' }}>
+            ❌ {error}
+          </div>
+        )}
+
+        {results !== null && !loading && (
           <>
-            <div style={{ fontSize: '.8rem', color: 'var(--mt)', marginBottom: 10 }}>
-              {results.length} result{results.length !== 1 ? 's' : ''}{q && ` for "${q}"`}
+            <div style={{ fontSize: '.8rem', color: 'var(--mt)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontWeight: 700, color: 'var(--txt)' }}>{results.length}</span> result{results.length !== 1 ? 's' : ''}
+              {q && <span>for "<strong>{q}</strong>"</span>}
+              <span style={{ marginLeft: 'auto', color: 'var(--green)', fontSize: '.75rem' }}>● Live data</span>
             </div>
+
             {results.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 40, color: 'var(--dim)' }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
@@ -427,43 +462,26 @@ export function TaskSearchPage({ empId: filterEmpId }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--surf2)' }}>
-                      {['Date', 'Employee', 'Dept', 'Type', 'Description', 'IN', 'OUT'].map(h => (
+                      {['#', 'Date', 'Editor', 'ID', 'News Type', 'Description', 'IN', 'OUT'].map(h => (
                         <th key={h} style={{ padding: '9px 12px', textAlign: 'left', color: 'var(--mt)', fontWeight: 700, fontSize: '.7rem', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {results.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--brd)', background: i % 2 === 0 ? 'transparent' : 'var(--surf2)' }}>
+                      <tr key={i} style={{ borderBottom: '1px solid var(--brd)', background: i%2===0?'transparent':'var(--surf2)' }}>
+                        <td style={{ padding: '8px 12px', color: 'var(--dim)', fontSize: '.74rem', fontWeight: 700 }}>{i+1}</td>
                         <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.date}</td>
-                        <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.empName}</td>
-                        <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem', whiteSpace: 'nowrap' }}>{r.dept}</td>
-                        {r.rowType === 'nle' ? (
-                          <>
-                            <td style={{ padding: '8px 12px' }}>
-                              <span style={{ background: (r.nt?.color || '#888') + '22', color: r.nt?.color || '#888', padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                {r.nt?.icon} {r.nt?.label || r.type}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px 12px', color: 'var(--txt)', maxWidth: 220, wordBreak: 'break-word' }}>{r.desc || '—'}</td>
-                            <td style={{ padding: '8px 12px', color: 'var(--green)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem' }}>{r.startTime || '—'}</td>
-                            <td style={{ padding: '8px 12px', color: 'var(--red)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem' }}>{r.endTime || '—'}</td>
-                          </>
-                        ) : (
-                          <>
-                            <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem' }}>Activities</td>
-                            <td colSpan={3} style={{ padding: '8px 12px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                                {r.fields.filter(f => parseInt(r.pd?.[f.key]) > 0).map(f => (
-                                  <span key={f.key} style={{ background: f.color + '18', color: f.color, padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600 }}>
-                                    {f.icon} {f.label}: {r.pd[f.key]}
-                                  </span>
-                                ))}
-                                {r.notes && <span style={{ color: 'var(--mt)', fontSize: '.74rem', fontStyle: 'italic' }}>📝 {r.notes}</span>}
-                              </div>
-                            </td>
-                          </>
-                        )}
+                        <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 700, whiteSpace: 'nowrap' }}>{r.empName}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.74rem' }}>{r.empCode}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ background: (r.nt?.color||'#888')+'22', color: r.nt?.color||'#888', padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {r.nt?.icon} {r.nt?.label||r.type}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 12px', color: 'var(--txt)', maxWidth: 240, wordBreak: 'break-word' }}>{r.desc||'—'}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--green)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.startTime||'—'}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--red)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.endTime||'—'}</td>
                       </tr>
                     ))}
                   </tbody>

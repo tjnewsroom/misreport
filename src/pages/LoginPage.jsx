@@ -160,7 +160,7 @@ export default function LoginPage({ onLogin }) {
             <div style={{position:'relative'}}>
               <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',fontSize:16,color:'#94a3b8'}}>🔒</span>
               <input
-                type={showPw?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)}
+                type="password" value={password} onChange={e=>setPassword(e.target.value)}
                 placeholder="••••••••••" autoComplete="current-password"
                 style={{
                   width:'100%', padding:'11px 44px 11px 40px',

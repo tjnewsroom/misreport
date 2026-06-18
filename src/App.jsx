@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { sb } from './lib/supabase';
-import { AppProvider } from './hooks/useApp';
+import { AppProvider, useApp } from './hooks/useApp';
 import { ToastProvider } from './hooks/useToast';
 import LoginPage from './pages/LoginPage';
 import EmployeeDashboard from './pages/EmployeeDashboard';

@@ -56,7 +56,20 @@ export function ShiftPlanner() {
     const el = tableRef.current; if(!el)return;
     toast('Generating...');
     try {
-      const canvas = await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false});
+      // Expand to full scroll size before capture so mobile gets the full week
+      const prevStyle = { overflow: el.style.overflow, width: el.style.width, height: el.style.height };
+      el.style.overflow = 'visible';
+      el.style.width    = el.scrollWidth  + 'px';
+      el.style.height   = el.scrollHeight + 'px';
+      const canvas = await html2canvas(el, {
+        scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
+        scrollX: 0, scrollY: 0,
+        windowWidth:  el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+      el.style.overflow = prevStyle.overflow;
+      el.style.width    = prevStyle.width;
+      el.style.height   = prevStyle.height;
       const fname = `TJ_Shifts_${fmtShort(days[0]).replace(/\//g,'-')}.png`;
       const blob = await new Promise(r=>canvas.toBlob(r,'image/png'));
       const file = new File([blob],fname,{type:'image/png'});
@@ -358,7 +371,6 @@ export function ShiftRequests() {
   const [reqs, setReqs] = useState(null);
   const [filter, setFilter] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
-  const [statusTab, setStatusTab] = useState('pending'); // 'pending' | 'approved' | 'rejected'
 
   const load = async () => {
     const{data}=await sb.from('shift_change_requests').select('*').order('submitted_at',{ascending:false});
@@ -393,10 +405,7 @@ export function ShiftRequests() {
   };
 
   const pending = (reqs||[]).filter(r=>r.status==='pending');
-  const approved = (reqs||[]).filter(r=>r.status==='approved');
-  const rejected = (reqs||[]).filter(r=>r.status==='rejected');
-  const tabList = statusTab==='pending' ? pending : statusTab==='approved' ? approved : rejected;
-  const filtered = filter ? tabList.filter(r=>(r.employee_name||'').toLowerCase().includes(filter.toLowerCase())) : tabList;
+  const filtered = filter ? pending.filter(r=>(r.employee_name||'').toLowerCase().includes(filter.toLowerCase())) : pending;
   const shiftLbl={"1ST":"🌅 1st Shift","2ND":"🌙 2nd Shift","OFF":"🏖️ Off"};
   const shiftCls={"1ST":"sc1","2ND":"sc2","OFF":"scoff"};
 
@@ -407,44 +416,15 @@ export function ShiftRequests() {
       </div>
       {reqs===null ? (
         <div className="card" style={{textAlign:'center',padding:40,color:'var(--mt)'}}>Loading...</div>
+      ) : !pending.length ? (
+        <div className="card" style={{textAlign:'center',padding:40,color:'var(--mt)'}}><div style={{fontSize:36,marginBottom:8}}>✅</div><div style={{fontWeight:600}}>All caught up!</div></div>
       ) : (
         <>
-          <div style={{display:'flex',gap:8,marginBottom:14}}>
-            <button
-              className="scr-req-btn"
-              style={{flex:1,background:statusTab==='pending'?'var(--amber)':'var(--surf2)',color:statusTab==='pending'?'#1a1300':'var(--mt)'}}
-              onClick={()=>setStatusTab('pending')}
-            >🔔 Pending ({pending.length})</button>
-            <button
-              className="scr-req-btn"
-              style={{flex:1,background:statusTab==='approved'?'var(--green)':'var(--surf2)',color:statusTab==='approved'?'#fff':'var(--mt)'}}
-              onClick={()=>setStatusTab('approved')}
-            >✅ Approved ({approved.length})</button>
-            <button
-              className="scr-req-btn"
-              style={{flex:1,background:statusTab==='rejected'?'var(--red)':'var(--surf2)',color:statusTab==='rejected'?'#fff':'var(--mt)'}}
-              onClick={()=>setStatusTab('rejected')}
-            >❌ Rejected ({rejected.length})</button>
+          <div className="card" style={{background:'var(--al)',borderColor:'rgba(217,119,6,.3)',marginBottom:16}}>
+            <div style={{fontWeight:700,color:'var(--amber)',marginBottom:10}}>🔔 {pendingCount} pending request{pendingCount>1?'s':''} awaiting approval</div>
+            <input className="inp" placeholder="🔍 Filter by employee name…" style={{fontSize:12}} value={filter} onChange={e=>setFilter(e.target.value)} />
           </div>
-          {!tabList.length ? (
-            <div className="card" style={{textAlign:'center',padding:40,color:'var(--mt)'}}>
-              <div style={{fontSize:36,marginBottom:8}}>{statusTab==='pending'?'✅':statusTab==='approved'?'📭':'🗑️'}</div>
-              <div style={{fontWeight:600}}>{statusTab==='pending'?'All caught up!':statusTab==='approved'?'No approved requests yet':'No rejected requests'}</div>
-            </div>
-          ) : (
-            <>
-              {statusTab==='pending' && (
-                <div className="card" style={{background:'var(--al)',borderColor:'rgba(217,119,6,.3)',marginBottom:16}}>
-                  <div style={{fontWeight:700,color:'var(--amber)',marginBottom:10}}>🔔 {pendingCount} pending request{pendingCount>1?'s':''} awaiting approval</div>
-                  <input className="inp" placeholder="🔍 Filter by employee name…" style={{fontSize:12}} value={filter} onChange={e=>setFilter(e.target.value)} />
-                </div>
-              )}
-              {statusTab!=='pending' && (
-                <div className="card" style={{marginBottom:16}}>
-                  <input className="inp" placeholder="🔍 Filter by employee name…" style={{fontSize:12}} value={filter} onChange={e=>setFilter(e.target.value)} />
-                </div>
-              )}
-              {filtered.map(req=>{
+          {filtered.map(req=>{
             const dateRange=req.start_date===req.end_date?scrFmtD(req.start_date):`${scrFmtD(req.start_date)} → ${scrFmtD(req.end_date)}`;
             return (
               <div key={req.id} className="scr-req-card">
@@ -469,8 +449,6 @@ export function ShiftRequests() {
               </div>
             );
           })}
-            </>
-          )}
         </>
       )}
     </div>

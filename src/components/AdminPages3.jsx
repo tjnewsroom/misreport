@@ -608,27 +608,46 @@ export function ReportPage({ selDate }) {
     const el = reportRef.current;
     if (!el) return;
     try {
-      // Temporarily expand element to full scroll height so entire content is captured
-      const prevHeight = el.style.height;
-      const prevOverflow = el.style.overflow;
-      el.style.height  = el.scrollHeight + 'px';
+      // Save original styles
+      const prev = {
+        overflow: el.style.overflow, width: el.style.width,
+        height: el.style.height, position: el.style.position,
+      };
+      // Expand to full content size — critical for mobile where content is clipped
       el.style.overflow = 'visible';
+      el.style.position = 'relative';
+      el.style.width    = el.scrollWidth  + 'px';
+      el.style.height   = el.scrollHeight + 'px';
+      // Small delay to let browser reflow before capture
+      await new Promise(r => setTimeout(r, 100));
       const canvas = await html2canvas(el, {
         scale: 2,
         backgroundColor: '#ffffff',
         useCORS: true,
         scrollX: 0,
         scrollY: 0,
-        windowWidth: el.scrollWidth,
+        windowWidth:  el.scrollWidth,
         windowHeight: el.scrollHeight,
       });
-      el.style.height   = prevHeight;
-      el.style.overflow = prevOverflow;
+      // Restore styles
+      el.style.overflow = prev.overflow;
+      el.style.position = prev.position;
+      el.style.width    = prev.width;
+      el.style.height   = prev.height;
       const link = document.createElement('a');
       link.download = `TJ_Report_${today}.png`;
       link.href = canvas.toDataURL('image/png');
+      // On mobile use share sheet if available
+      if (navigator.share) {
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        const file = new File([blob], link.download, { type: 'image/png' });
+        if (navigator.canShare?.({ files: [file] })) {
+          try { await navigator.share({ title: 'TJ MIS Report', files: [file] }); return; }
+          catch(e) { if (e.name === 'AbortError') return; }
+        }
+      }
       link.click();
-    } catch(e){ console.error(e); }
+    } catch(e){ console.error('Image export failed:', e); }
   };
 
   // Reusable table styles

@@ -40,13 +40,16 @@ const buildNavSections = (hasEmpRecord) => {
   return sections;
 };
 
-// Flat list for mobile bottom nav — show most used tabs
+// Flat list for mobile bottom nav
 const MOB_TABS = [
-  { id:'overview', label:'Overview', icon:'📊' },
-  { id:'today',    label:'Today',    icon:'🗒' },
-  { id:'att',      label:'Attend',   icon:'🕒' },
-  { id:'shifts',   label:'Shifts',   icon:'📅' },
-  { id:'report',   label:'Report',   icon:'📄' },
+  { id:'overview',  label:'Overview',  icon:'📊' },
+  { id:'today',     label:'Today',     icon:'🗒' },
+  { id:'shifts',    label:'Shifts',    icon:'📅' },
+  { id:'shiftreq',  label:'Shift Req', icon:'🔄' },
+  { id:'staff',     label:'Staff',     icon:'👥' },
+  { id:'quality',   label:'Quality',   icon:'🎯' },
+  { id:'search',    label:'Search',    icon:'🔍' },
+  { id:'report',    label:'Report',    icon:'📄' },
 ];
 
 export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmployee, hasEmpRecord, theme, onToggleTheme }) {
@@ -185,11 +188,6 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
             </button>
           ))}
           {/* More button shows current non-pinned tab label */}
-          <button className={`mob-btn ${!MOB_TABS.find(t=>t.id===activeTab)?'active':''}`}
-            onClick={() => setActiveTab(hasEmpRecord?'daily':'staff')}>
-            <span className="mi">☰</span>
-            More
-          </button>
           <button className="mob-btn" onClick={onSwitchEmployee}
             style={{color:'var(--green)'}}>
             <span className="mi">👤</span>

@@ -300,73 +300,80 @@ export function ProducersPage({ selDate }) {
 export function TaskSearchPage({ empId: filterEmpId }) {
   const { state } = useApp();
   const [q, setQ] = useState('');
-  const [deptFilter, setDeptFilter] = useState('All');
   const [results, setResults] = useState(null);
-  const isEmpView = !!filterEmpId;
 
-  // Determine the dept of the employee (for employee view)
-  const filterEmp = filterEmpId ? state.emps.find(e => String(e.id) === String(filterEmpId)) : null;
-  const filterDept = filterEmp?.dept || 'NLE Editor';
-  // News Producer → can search all NLE editors (admin-style search)
-  // Voice Over    → search own prod entries only
-  // NLE Editor    → search own NLE tasks only
-  const isProducerView = isEmpView && filterDept === 'News Producer';
-  const isVOView = isEmpView && filterDept === 'Voice Over';
+  const filterEmp  = filterEmpId ? state.emps.find(e => String(e.id) === String(filterEmpId)) : null;
+  const filterDept = filterEmp?.dept || null;
+  // News Producer: sees ALL NLE editors tasks (like admin)
+  // NLE Editor: own tasks only
+  // Voice Over: own prod entries only
+  // Admin (no filterEmpId): all
+  const isNewsProducer = filterDept === 'News Producer';
+  const isVoiceOver    = filterDept === 'Voice Over';
+  const isNLEEditor    = filterDept === 'NLE Editor';
+  const isAdmin        = !filterEmpId;
 
   const handleSearch = () => {
     const term = q.trim().toLowerCase();
     const found = [];
 
-    // ── NLE Tasks search ──
-    // Show for: admin (no filter), NLE employee (own only), News Producer (ALL editors — admin style)
-    const searchNLE = !isEmpView || filterDept === 'NLE Editor' || isProducerView;
-    if (searchNLE) {
+    // ── Search NLE daily tasks ──────────────────────────────────────────────
+    // Admin → all editors | News Producer → all editors | NLE Editor → own only
+    if (isAdmin || isNewsProducer || isNLEEditor) {
       Object.entries(state.daily).forEach(([empId, byDate]) => {
-        // NLE employee: own tasks only; Producer: all NLE editors; Admin: apply dept filter
-        if (filterDept === 'NLE Editor' && String(empId) !== String(filterEmpId)) return;
-        // Producer sees all NLE editors — no emp filter
-        if (!isEmpView && deptFilter !== 'All' && deptFilter !== 'NLE Editor') return;
         const emp = state.emps.find(e => e.id === empId);
         if (!emp || emp.dept !== 'NLE Editor') return;
+        // NLE Editor sees own only
+        if (isNLEEditor && String(empId) !== String(filterEmpId)) return;
         Object.entries(byDate).forEach(([date, items]) => {
           (items || []).forEach(item => {
             const nt = NEWS_TYPES.find(n => n.key === item.type);
             const hay = [nt?.label || '', item.desc || '', item.type, emp.name, date].join(' ').toLowerCase();
-            if (!term || hay.includes(term)) found.push({ emp: emp.name, dept: emp.dept, date, ...item, nt, rowType: 'nle' });
+            if (!term || hay.includes(term)) {
+              found.push({ empName: emp.name, empId, dept: emp.dept, date, ...item, nt, rowType: 'nle' });
+            }
           });
         });
       });
     }
 
-    // ── Producer/VO search ──
-    // Show for: admin, own prod/VO employee
-    const searchProd = !isEmpView || isProducerView || isVOView;
-    if (searchProd && !isProducerView) { // producers only see NLE editors, not prod entries
+    // ── Search Producer/VO prod entries ────────────────────────────────────
+    // Admin → all | Voice Over → own only
+    if (isAdmin || isVoiceOver) {
       Object.entries(state.prodDaily).forEach(([empId, byDate]) => {
-        if (isVOView && String(empId) !== String(filterEmpId)) return;
-        if (!isEmpView && deptFilter !== 'All' && deptFilter !== 'News Producer' && deptFilter !== 'Voice Over') return;
         const emp = state.emps.find(e => e.id === empId);
         if (!emp) return;
         if (emp.dept !== 'News Producer' && emp.dept !== 'Voice Over') return;
+        if (isVoiceOver && String(empId) !== String(filterEmpId)) return;
         const fields = emp.dept === 'News Producer' ? PROD_FIELDS : VO_FIELDS;
         Object.entries(byDate).forEach(([date, pd]) => {
           const hasData = fields.some(f => parseInt(pd[f.key]) > 0);
           if (!hasData) return;
-          const summary = fields.filter(f => parseInt(pd[f.key]) > 0).map(f => `${f.label}:${pd[f.key]}`).join(' ');
+          const summary = fields.filter(f => parseInt(pd[f.key]) > 0).map(f => `${f.label} ${pd[f.key]}`).join(' ');
           const hay = [emp.name, emp.dept, date, summary, pd.notes || ''].join(' ').toLowerCase();
-          if (!term || hay.includes(term)) found.push({ emp: emp.name, dept: emp.dept, date, rowType: 'prod', pd, fields, notes: pd.notes });
+          if (!term || hay.includes(term)) {
+            found.push({ empName: emp.name, empId, dept: emp.dept, date, rowType: 'prod', pd, fields, notes: pd.notes });
+          }
         });
       });
     }
 
     found.sort((a, b) => b.date.localeCompare(a.date));
     setResults(found);
+    console.log('🔍 Search results:', found.length, 'found for term:', term);
   };
 
   const exportXLS = () => {
     if (!results?.length) return;
-    const rows = [['Date', 'Employee', 'Dept', 'News Type', 'Description', 'Start', 'End']];
-    results.forEach(r => rows.push([r.date, r.emp, r.dept, r.nt?.label || r.type, r.desc, r.startTime || '', r.endTime || '']));
+    const rows = [['Date', 'Employee', 'Dept', 'Type / Activity', 'Description / Details', 'Start', 'End']];
+    results.forEach(r => {
+      if (r.rowType === 'nle') {
+        rows.push([r.date, r.empName, r.dept, r.nt?.label || r.type, r.desc || '', r.startTime || '', r.endTime || '']);
+      } else {
+        const detail = r.fields.filter(f => parseInt(r.pd?.[f.key]) > 0).map(f => `${f.label}:${r.pd[f.key]}`).join(', ');
+        rows.push([r.date, r.empName, r.dept, r.dept + ' Activities', detail, '', '']);
+      }
+    });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Results');
     XLSX.writeFile(wb, `TJ_Search_${todayStr()}.xlsx`);
@@ -375,65 +382,78 @@ export function TaskSearchPage({ empId: filterEmpId }) {
   return (
     <div style={{ padding: 20 }}>
       <div className="sec-hdr">
-        <div><div className="sec-title">🔍 Task Search</div><div className="sec-sub">Search all NLE tasks across all dates</div></div>
-        {results?.length > 0 && <button className="btn btn-p btn-sm" onClick={exportXLS}>📊 Export Excel</button>}
-      </div>
-      <div className="card">
-        {isProducerView && (
-          <div style={{ marginBottom: 12, padding: '8px 14px', background: 'var(--bl)', borderRadius: 8, fontSize: '.8rem', color: 'var(--blue)', fontWeight: 600 }}>
-            🔍 Searching all NLE Editor tasks across all dates
+        <div>
+          <div className="sec-title">🔍 Task Search</div>
+          <div className="sec-sub">
+            {isNewsProducer ? '📋 Search all NLE Editor tasks' :
+             isVoiceOver    ? '🎙 Search your Voice Over entries' :
+             isNLEEditor    ? '📰 Search your NLE tasks' :
+             'Search all tasks across all staff and dates'}
           </div>
-        )}
+        </div>
+        {results?.length > 0 && <button className="btn btn-p btn-sm" onClick={exportXLS}>📊 Export</button>}
+      </div>
+
+      {isNewsProducer && (
+        <div style={{ marginBottom: 12, padding: '10px 16px', background: 'var(--bl)', borderRadius: 10, fontSize: '.82rem', color: 'var(--blue)', fontWeight: 600, border: '1px solid rgba(35,97,212,.2)' }}>
+          📋 You can search across <strong>all NLE Editors'</strong> tasks — by news type, description, or editor name.
+        </div>
+      )}
+
+      <div className="card">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <input className="inp" placeholder={isProducerView ? "Search by news type, description, editor name…" : "Search news type, description, employee name…"}
-            value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            style={{ flex: 1, minWidth: 200 }} />
-          {!isEmpView && (
-            <select className="inp inp-sm" style={{ maxWidth: 160 }} value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
-              <option value="All">All Departments</option>
-              {DEPTS.map(d => <option key={d}>{d}</option>)}
-            </select>
-          )}
-          <button className="btn btn-p" onClick={handleSearch}>Search</button>
+          <input className="inp"
+            placeholder="Search news type, description, editor name…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            style={{ flex: 1, minWidth: 200 }}
+          />
+          <button className="btn btn-p" onClick={handleSearch}>🔍 Search</button>
         </div>
 
         {results !== null && (
           <>
             <div style={{ fontSize: '.8rem', color: 'var(--mt)', marginBottom: 10 }}>
-              {results.length} result{results.length !== 1 ? 's' : ''} {q && `for "${q}"`}
+              {results.length} result{results.length !== 1 ? 's' : ''}{q && ` for "${q}"`}
             </div>
-            {results.length === 0
-              ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--dim)', fontSize: '.9rem' }}>No matching tasks found.</div>
-              : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                    <thead>
-                      <tr style={{ background: 'var(--surf2)' }}>
-                        {['Date', 'Employee', 'Dept', 'Type', 'Description', 'IN', 'OUT'].map(h => (
-                          <th key={h} style={{ padding: '9px 12px', textAlign: 'left', color: 'var(--mt)', fontWeight: 600, fontSize: '.7rem', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '1px solid var(--brd)', whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.map((r, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--brd)' }}>
-                          <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.date}</td>
-                          <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.emp}</td>
-                          <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem', whiteSpace: 'nowrap' }}>{r.dept}</td>
-                          {r.rowType === 'nle' ? (
-                            <>
-                              <td style={{ padding: '8px 12px' }}>
-                                <span style={{ background: (r.nt?.color || '#888') + '22', color: r.nt?.color || '#888', padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                  {r.nt?.icon} {r.nt?.label || r.type}
-                                </span>
-                              </td>
-                              <td style={{ padding: '8px 12px', color: 'var(--txt)', maxWidth: 220, wordBreak: 'break-word' }}>{r.desc || '—'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.startTime || '—'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.endTime || '—'}</td>
-                            </>
-                          ) : (
-                            <td colSpan={4} style={{ padding: '8px 12px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {results.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--dim)' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                No matching tasks found.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--surf2)' }}>
+                      {['Date', 'Employee', 'Dept', 'Type', 'Description', 'IN', 'OUT'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: 'left', color: 'var(--mt)', fontWeight: 700, fontSize: '.7rem', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--brd)', background: i % 2 === 0 ? 'transparent' : 'var(--surf2)' }}>
+                        <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.date}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.empName}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem', whiteSpace: 'nowrap' }}>{r.dept}</td>
+                        {r.rowType === 'nle' ? (
+                          <>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{ background: (r.nt?.color || '#888') + '22', color: r.nt?.color || '#888', padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                {r.nt?.icon} {r.nt?.label || r.type}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px 12px', color: 'var(--txt)', maxWidth: 220, wordBreak: 'break-word' }}>{r.desc || '—'}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--green)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem' }}>{r.startTime || '—'}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--red)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem' }}>{r.endTime || '—'}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem' }}>Activities</td>
+                            <td colSpan={3} style={{ padding: '8px 12px' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                                 {r.fields.filter(f => parseInt(r.pd?.[f.key]) > 0).map(f => (
                                   <span key={f.key} style={{ background: f.color + '18', color: f.color, padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600 }}>
                                     {f.icon} {f.label}: {r.pd[f.key]}
@@ -442,13 +462,14 @@ export function TaskSearchPage({ empId: filterEmpId }) {
                                 {r.notes && <span style={{ color: 'var(--mt)', fontSize: '.74rem', fontStyle: 'italic' }}>📝 {r.notes}</span>}
                               </div>
                             </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -464,345 +485,300 @@ const RANGE_OPTS = [
   { id: 'custom',label: '🔎 Date Range' },
 ];
 
+// ── Full Report ───────────────────────────────────────────────────────────────
+function getDatesR(rangeId, from, to) {
+  const today = todayStr();
+  if (rangeId === 'today') return [today];
+  if (rangeId === 'week') {
+    const d = new Date(today + 'T12:00:00');
+    const mon = new Date(d); mon.setDate(d.getDate() - (d.getDay()===0?6:d.getDay()-1));
+    return Array.from({length:7}, (_,i) => { const r=new Date(mon); r.setDate(mon.getDate()+i); return r.toISOString().slice(0,10); });
+  }
+  if (rangeId === 'month') {
+    const [y,m] = today.split('-').map(Number);
+    const days = new Date(y,m,0).getDate();
+    return Array.from({length:days}, (_,i) => `${today.slice(0,7)}-${String(i+1).padStart(2,'0')}`);
+  }
+  if (rangeId === 'custom' && from && to && from <= to) {
+    const dates=[]; let cur=from, s=0;
+    while(cur<=to && s<400){dates.push(cur);cur=addDaysISO(cur,1);s++;}
+    return dates;
+  }
+  return [today];
+}
+
 export function ReportPage({ selDate }) {
   const { state } = useApp();
   const reportRef = useRef();
-  const [range, setRange] = useState('today');
-  const [customFrom, setCustomFrom] = useState(selDate);
-  const [customTo, setCustomTo] = useState(selDate);
-  const [viewMode, setViewMode] = useState('cumulative'); // 'cumulative' | 'breakup'
-  const [section, setSection] = useState('nle');
-  const [exporting, setExporting] = useState(false);
+  const today = todayStr();
+  const [range, setRange]       = useState('month');
+  const [customFrom, setCustomFrom] = useState(today.slice(0,7)+'-01');
+  const [customTo,   setCustomTo]   = useState(today);
+  const [exporting, setExporting]   = useState(false);
 
-  // Compute dates only when inputs change (not on every render)
-  const dates = useMemo(() => getDates(range, customFrom, customTo), [range, customFrom, customTo]);
+  // Always compute via "Generate" button click to avoid re-computing on every keystroke
+  const initDates = getDatesR('month', customFrom, customTo);
+  const [dates, setDates] = useState(initDates);
+  const [generated, setGenerated] = useState(true);
+
+  const handleGenerate = () => {
+    setDates(getDatesR(range, customFrom, customTo));
+    setGenerated(true);
+  };
+
+  // When range button clicked, auto-generate immediately
+  const handleRange = (r) => {
+    setRange(r);
+    if (r !== 'custom') setDates(getDatesR(r, customFrom, customTo));
+  };
 
   const dateLabel = dates.length === 1
-    ? fmtDate(dates[0])
-    : `${fmtS(dates[0])} – ${fmtS(dates[dates.length - 1])} (${dates.length} days)`;
+    ? fmtS(dates[0])
+    : `${fmtS(dates[0])} → ${fmtS(dates[dates.length-1])}`;
 
-  const isMultiDay = dates.length > 1;
+  const activeNLETypes = NEWS_TYPES.filter(nt =>
+    state.emps.filter(e=>e.is_active&&e.dept==='NLE Editor')
+      .some(emp => dates.some(d => (state.daily[emp.id]?.[d]||[]).some(it=>it.type===nt.key)))
+  );
 
-  // ─ Cumulative data (per employee totals) ─
-  const empSummary = useMemo(() => {
-    return state.emps.filter(e => e.is_active).map(emp => {
-      const allItems = dates.flatMap(d => state.daily[emp.id]?.[d] || []);
-      const wpts = allItems.reduce((s, it) => { const nt = NEWS_TYPES.find(n => n.key === it.type); return s + (nt?.weight || 0); }, 0);
-      const presentDays = dates.filter(d => state.attendance[emp.id]?.[d]?.in_time).length;
-      const sc = calcScore(emp.id, emp.dept, dates[dates.length - 1].slice(0, 7), state.daily, state.prodDaily, state.quality, state.reliability);
-      return { ...emp, allItems, wpts, presentDays, sc };
-    });
-  }, [dates, state.emps, state.daily, state.attendance]);
+  const nleEmps  = state.emps.filter(e=>e.is_active&&e.dept==='NLE Editor');
+  const prodEmps = state.emps.filter(e=>e.is_active&&e.dept==='News Producer');
+  const voEmps   = state.emps.filter(e=>e.is_active&&e.dept==='Voice Over');
+
+  const Th = ({children, center, color}) => (
+    <th style={{padding:'9px 10px',textAlign:center?'center':'left',color:color||'var(--mt)',fontWeight:700,
+      fontSize:'.72rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:50}}>
+      {children}
+    </th>
+  );
 
   const exportExcel = () => {
     setExporting(true);
     try {
       const wb = XLSX.utils.book_new();
-
-      const nleRows = [['Date', 'Employee', 'News Type', 'Description', 'Start', 'End', 'Pts']];
-      state.emps.filter(e => e.is_active && e.dept === 'NLE Editor').forEach(emp => {
-        dates.forEach(d => {
-          (state.daily[emp.id]?.[d] || []).forEach(it => {
-            const nt = NEWS_TYPES.find(n => n.key === it.type);
-            nleRows.push([d, emp.name, nt?.label || it.type, it.desc || '', it.startTime || '', it.endTime || '', nt?.weight || 0]);
-          });
-        });
+      // NLE sheet
+      const nleH = ['#','Name','ID',...activeNLETypes.map(n=>n.label),'Total','Pts','Time','Score'];
+      const nleRows = [nleH];
+      nleEmps.forEach((emp,i) => {
+        const allItems = dates.flatMap(d=>state.daily[emp.id]?.[d]||[]);
+        const wpts = allItems.reduce((s,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type);return s+(nt?.weight||0);},0);
+        const mins = allItems.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
+        const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+        nleRows.push([i+1,emp.name,emp.id,...activeNLETypes.map(nt=>allItems.filter(it=>it.type===nt.key).length||'—'),allItems.length,wpts,fmtMin(mins),sc.final]);
       });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(nleRows), 'NLE Tasks');
-
-      const attRows = [['Date', 'Employee', 'Dept', 'In Time', 'Out Time', 'Status']];
-      state.emps.filter(e => e.is_active).forEach(emp => {
-        dates.forEach(d => {
-          const att = state.attendance[emp.id]?.[d] || {};
-          attRows.push([d, emp.name, emp.dept, att.in_time || '', att.out_time || '', att.in_time ? 'Present' : 'Absent']);
-        });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(nleRows), 'NLE Editors');
+      // Producer sheet
+      const pRows = [['#','Name','ID',...PROD_FIELDS.map(f=>f.label),'Score']];
+      prodEmps.forEach((emp,i) => {
+        const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+        pRows.push([i+1,emp.name,emp.id,...PROD_FIELDS.map(f=>dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0)||'—'),sc.final]);
       });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(attRows), 'Attendance');
-
-      const sumRows = [['Employee', 'Dept', 'Tasks', 'Pts', 'Days Present', 'Score']];
-      empSummary.forEach(e => sumRows.push([e.name, e.dept, e.allItems.length, e.wpts, e.presentDays, e.sc.final]));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumRows), 'Summary');
-
-      XLSX.writeFile(wb, `TJ_Report_${range}_${todayStr()}.xlsx`);
-    } catch (e) { console.error(e); }
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pRows), 'News Producers');
+      // VO sheet
+      const vRows = [['#','Name','ID',...VO_FIELDS.map(f=>f.label),'Score']];
+      voEmps.forEach((emp,i) => {
+        const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+        vRows.push([i+1,emp.name,emp.id,...VO_FIELDS.map(f=>dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0)||'—'),sc.final]);
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(vRows), 'Voice Over');
+      XLSX.writeFile(wb, `TJ_MIS_Report_${dateLabel.replace(/ /g,'_')}.xlsx`);
+    } catch(e){console.error(e);}
     setExporting(false);
   };
 
   const exportImage = async () => {
     try {
-      const canvas = await html2canvas(reportRef.current, { scale: 2, backgroundColor: '#1f2937', useCORS: true });
+      const canvas = await html2canvas(reportRef.current,{scale:2,backgroundColor:'#ffffff',useCORS:true});
       const link = document.createElement('a');
-      link.download = `TJ_Report_${todayStr()}.png`;
+      link.download = `TJ_Report_${today}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
-    } catch (e) { console.error(e); }
+    } catch(e){console.error(e);}
   };
 
-  // Row renderer for breakup (per-date rows) — skips dates with no attendance AND no tasks
-  const BreakupRow = ({ emp }) => {
-    return dates.map(d => {
-      const items = state.daily[emp.id]?.[d] || [];
-      const att = state.attendance[emp.id]?.[d];
-      // Skip if no data at all for this date
-      if (!att?.in_time && !items.length) return null;
-      const wpts = items.reduce((s, it) => { const nt = NEWS_TYPES.find(n => n.key === it.type); return s + (nt?.weight || 0); }, 0);
-      return (
-        <tr key={d} style={{ borderBottom: '1px solid var(--brd)' }}>
-          <td style={{ padding: '7px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-          <td style={{ padding: '7px 12px', color: 'var(--mt)', fontSize: '.74rem', fontFamily: "'JetBrains Mono'" }}>{d}</td>
-          <td style={{ padding: '7px 12px', textAlign: 'center' }}>
-            {att?.in_time ? <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: '.8rem' }}>{att.in_time}</span> : <span style={{ color: 'var(--dim)' }}>—</span>}
-          </td>
-          <td style={{ padding: '7px 12px', textAlign: 'center' }}>
-            {att?.out_time ? <span style={{ color: 'var(--red)', fontSize: '.8rem' }}>{att.out_time}</span> : <span style={{ color: 'var(--dim)' }}>—</span>}
-          </td>
-          <td style={{ padding: '7px 12px', textAlign: 'center', color: 'var(--blue)', fontWeight: 700 }}>{items.length || '—'}</td>
-          <td style={{ padding: '7px 12px', textAlign: 'center', color: 'var(--amber)', fontWeight: 700 }}>{wpts || '—'}</td>
-        </tr>
-      );
-    });
-  };
-
-  const Th = ({ children, center }) => (
-    <th style={{ padding: '9px 12px', textAlign: center ? 'center' : 'left', color: 'var(--mt)', fontWeight: 600, fontSize: '.7rem', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap', background: 'var(--surf2)' }}>{children}</th>
-  );
+  // Reusable table styles
+  const tdBase = {padding:'10px 10px',borderBottom:'1px solid var(--brd)',verticalAlign:'middle'};
 
   return (
-    <div style={{ padding: 20 }}>
-      {/* Header */}
-      <div className="sec-hdr">
-        <div><div className="sec-title">📄 Full Report</div><div className="sec-sub">{dateLabel}</div></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-p btn-sm" onClick={exportExcel} disabled={exporting}>{exporting ? '⏳…' : '📊 Export Excel'}</button>
-          <button className="btn btn-sm" style={{ background: 'var(--surf2)', border: '1px solid var(--brd)', color: 'var(--txt)' }} onClick={exportImage}>🖼 Image</button>
+    <div style={{padding:20}}>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:'1.2rem',fontWeight:800,color:'var(--txt)',letterSpacing:'-.3px'}}>Full MIS Report</div>
+        <div style={{fontSize:'.82rem',color:'var(--mt)',marginTop:2}}>{dateLabel} Report</div>
+      </div>
+
+      {/* Controls card */}
+      <div className="card" style={{marginBottom:20}}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+          {[{id:'today',label:'📅 Today'},{id:'week',label:'📆 This Week'},{id:'month',label:'🗓 This Month'}].map(r=>(
+            <button key={r.id} onClick={()=>handleRange(r.id)} style={{
+              padding:'8px 18px',borderRadius:999,border:'1px solid var(--brd)',
+              background:range===r.id?'var(--blue)':'var(--surf2)',
+              color:range===r.id?'#fff':'var(--mt)',
+              fontSize:'.82rem',cursor:'pointer',fontWeight:range===r.id?700:400,
+              transition:'all .15s'
+            }}>{r.label}</button>
+          ))}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:4}}>
+            <span style={{fontSize:'.78rem',color:'var(--mt)',fontWeight:600}}>FROM</span>
+            <input type="date" className="inp inp-sm" style={{maxWidth:160}} value={customFrom}
+              onChange={e=>{setCustomFrom(e.target.value);setRange('custom');}}/>
+            <span style={{fontSize:'.78rem',color:'var(--mt)',fontWeight:600}}>TO</span>
+            <input type="date" className="inp inp-sm" style={{maxWidth:160}} value={customTo} min={customFrom}
+              onChange={e=>{setCustomTo(e.target.value);setRange('custom');}}/>
+            <button className="btn btn-p btn-sm" onClick={handleGenerate}>⚡ Generate</button>
+          </div>
         </div>
       </div>
 
-      {/* Range + mode controls */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          {RANGE_OPTS.map(r => <Pill key={r.id} active={range === r.id} onClick={() => setRange(r.id)}>{r.label}</Pill>)}
-        </div>
-        {range === 'custom' && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid var(--brd)' }}>
-            <label style={{ fontSize: '.8rem', color: 'var(--mt)' }}>From</label>
-            <input type="date" className="inp inp-sm" style={{ maxWidth: 160 }} value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
-            <label style={{ fontSize: '.8rem', color: 'var(--mt)' }}>To</label>
-            <input type="date" className="inp inp-sm" style={{ maxWidth: 160 }} value={customTo} min={customFrom} onChange={e => setCustomTo(e.target.value)} />
-            <span style={{ fontSize: '.78rem', color: 'var(--green)' }}>{dates.length} day{dates.length !== 1 ? 's' : ''}</span>
-          </div>
-        )}
-        {/* Cumulative / Breakup toggle — only for multi-day */}
-        {isMultiDay && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, marginTop: 4, borderTop: '1px solid var(--brd)' }}>
-            <span style={{ fontSize: '.78rem', color: 'var(--mt)', fontWeight: 600 }}>View mode:</span>
-            <Pill active={viewMode === 'cumulative'} onClick={() => setViewMode('cumulative')}>📊 Cumulative (per employee)</Pill>
-            <Pill active={viewMode === 'breakup'} onClick={() => setViewMode('breakup')}>📋 Breakup (per date)</Pill>
-          </div>
-        )}
-      </div>
-
-      {/* Section tabs */}
-      <div style={{ display: 'flex', gap: 2, marginBottom: 16, background: 'var(--surf2)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
-        {[{ id: 'nle', label: '🎬 NLE' }, { id: 'att', label: '🕒 Attendance' }, { id: 'scores', label: '⭐ Scores' }, { id: 'prod', label: '🎙 Producers' }, { id: 'team', label: '👥 Entire Team' }].map(s => (
-          <button key={s.id} onClick={() => setSection(s.id)} style={{
-            padding: '6px 14px', borderRadius: 8, border: 'none',
-            background: section === s.id ? 'var(--surf)' : 'transparent',
-            color: section === s.id ? 'var(--txt)' : 'var(--mt)',
-            fontSize: '.82rem', cursor: 'pointer', fontWeight: section === s.id ? 700 : 400,
-            boxShadow: section === s.id ? 'var(--sh)' : 'none', transition: 'all .15s'
-          }}>{s.label}</button>
-        ))}
+      {/* Export buttons */}
+      <div style={{display:'flex',gap:8,marginBottom:20}}>
+        <button className="btn btn-s" onClick={exportExcel} disabled={exporting}>
+          📊 {exporting?'Exporting…':'Excel'}
+        </button>
+        <button className="btn btn-s" onClick={exportImage}>🖼 Image</button>
       </div>
 
       {/* Report body */}
       <div ref={reportRef}>
-        {/* Brand header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '14px 20px', background: 'var(--surf)', borderRadius: 12, border: '1px solid var(--brd)' }}>
-          <span style={{ fontSize: 28 }}>📺</span>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--txt)' }}>TamilJanam MIS · Report</div>
-            <div style={{ fontSize: '.75rem', color: 'var(--mt)' }}>{dateLabel} · {isMultiDay ? (viewMode === 'cumulative' ? 'Cumulative' : 'Daily Breakup') : 'Single Day'}</div>
+
+        {/* Header banner */}
+        <div style={{
+          background:'linear-gradient(135deg,#1a3a8f 0%,#0d6eab 60%,#0a9396 100%)',
+          borderRadius:14,padding:'20px 28px',marginBottom:20,
+          boxShadow:'0 4px 20px rgba(26,58,143,.3)'
+        }}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+            <div>
+              <div style={{fontSize:'1.2rem',fontWeight:800,color:'#fff',letterSpacing:'.02em'}}>TAMILJANAM NLE PRODUCTION</div>
+              <div style={{fontSize:'.78rem',color:'rgba(255,255,255,.7)',marginTop:4}}>MIS Report · {dateLabel}</div>
+            </div>
+            <img src="/tj-logo.png" alt="" style={{height:40,opacity:.85}} onError={e=>e.target.style.display='none'}/>
           </div>
         </div>
 
-        {/* ── NLE Section ── */}
-        {section === 'nle' && (
-          <div className="card">
-            <div style={{ marginBottom: 16, padding: '14px 18px', borderRadius: 10, background: 'linear-gradient(135deg,var(--blue),var(--cyan,#0891b2))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }}>🎬</span>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#fff' }}>NLE EDITOR</div>
-                  <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.7)' }}>{state.emps.filter(e=>e.is_active&&e.dept==='NLE Editor').length} staff</div>
-                </div>
+        {/* ── NLE EDITORS ── */}
+        <div style={{background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:14,overflow:'hidden',marginBottom:20,boxShadow:'var(--sh)'}}>
+          <div style={{
+            background:'linear-gradient(135deg,#1a56db,#0891b2)',
+            padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:20}}>🎬</span>
+              <div>
+                <div style={{fontWeight:800,fontSize:'1rem',color:'#fff'}}>NLE EDITOR</div>
+                <div style={{fontSize:'.7rem',color:'rgba(255,255,255,.7)'}}>{nleEmps.length} staff</div>
               </div>
-              <div style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.8)', fontFamily: "'JetBrains Mono'" }}>{dateLabel}</div>
             </div>
-            {(isMultiDay && viewMode === 'breakup') ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead><tr><Th>Employee</Th><Th>Date</Th><Th center>IN</Th><Th center>OUT</Th><Th center>Tasks</Th><Th center>Pts</Th></tr></thead>
-                  <tbody>
-                    {state.emps.filter(e => e.is_active && e.dept === 'NLE Editor').map(emp => <BreakupRow key={emp.id} emp={emp} />)}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              // Cumulative: news-type breakdown table per employee (like screenshot)
-              (() => {
-                const nleEmps = state.emps.filter(e => e.is_active && e.dept === 'NLE Editor');
-                // Get all news types that have at least one entry in this date range
-                const activeTypes = NEWS_TYPES.filter(nt =>
-                  nleEmps.some(emp => dates.some(d => (state.daily[emp.id]?.[d] || []).some(it => it.type === nt.key)))
-                );
-                if (!activeTypes.length) return (
-                  <div style={{ textAlign: 'center', padding: 40, color: 'var(--mt)' }}>
-                    <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
-                    No NLE entries found for this date range.
-                  </div>
-                );
-                return (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.8rem' }}>
-                      <thead>
-                        <tr style={{ background: 'var(--surf2)' }}>
-                          <Th>#</Th>
-                          <Th>Name</Th>
-                          <Th>ID</Th>
-                          {activeTypes.map(nt => (
-                            <th key={nt.key} style={{ padding: '10px 8px', textAlign: 'center', color: nt.color, fontWeight: 700, fontSize: '.72rem', borderBottom: '2px solid var(--brd)', background: 'var(--surf2)', whiteSpace: 'nowrap', minWidth: 60 }}>
-                              <div style={{ fontSize: 16, marginBottom: 2 }}>{nt.icon}</div>
-                              <div>{nt.label.replace(' ', '_')}</div>
-                            </th>
-                          ))}
-                          <Th center>Total</Th>
-                          <Th center>Pts</Th>
-                          <Th center>Time</Th>
-                          <Th center>Score</Th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {nleEmps.map((emp, idx) => {
-                          const allItems = dates.flatMap(d => state.daily[emp.id]?.[d] || []);
-                          const totalMins = allItems.reduce((s, it) => s + (tdiff(it.startTime, it.endTime) ?? it.manualMins ?? 0), 0);
-                          const wpts = allItems.reduce((s, it) => { const nt = NEWS_TYPES.find(n => n.key === it.type); return s + (nt?.weight || 0); }, 0);
-                          const sc = calcScore(emp.id, emp.dept, dates[dates.length - 1].slice(0, 7), state.daily, state.prodDaily, state.quality, state.reliability);
-                          const gc = sc.final >= 80 ? 'var(--green)' : sc.final >= 60 ? 'var(--amber)' : 'var(--red)';
+            <span style={{fontSize:'.75rem',color:'rgba(255,255,255,.8)',fontFamily:"'JetBrains Mono'"}}>{dateLabel}</span>
+          </div>
+          {activeNLETypes.length === 0 ? (
+            <div style={{textAlign:'center',padding:40,color:'var(--mt)'}}>
+              <div style={{fontSize:32,marginBottom:8}}>📭</div>No NLE entries for this period.
+            </div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.8rem'}}>
+                <thead>
+                  <tr style={{background:'var(--surf2)'}}>
+                    <Th>#</Th>
+                    <Th>Name</Th>
+                    <Th>ID</Th>
+                    {activeNLETypes.map(nt=>(
+                      <th key={nt.key} style={{padding:'10px 8px',textAlign:'center',color:nt.color,fontWeight:700,
+                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',
+                        whiteSpace:'nowrap',minWidth:58}}>
+                        <div style={{fontSize:16,marginBottom:2}}>{nt.icon}</div>
+                        <div>{nt.label.replace(/\s/g,'_')}</div>
+                      </th>
+                    ))}
+                    <Th center>Total</Th>
+                    <Th center>Pts</Th>
+                    <Th center>Time</Th>
+                    <Th center>Score</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nleEmps.map((emp,idx)=>{
+                    const allItems = dates.flatMap(d=>state.daily[emp.id]?.[d]||[]);
+                    const wpts = allItems.reduce((s,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type);return s+(nt?.weight||0);},0);
+                    const mins = allItems.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
+                    const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+                    const gc = sc.final>=80?'var(--green)':sc.final>=60?'var(--amber)':'var(--red)';
+                    return (
+                      <tr key={emp.id} style={{borderBottom:'1px solid var(--brd)',background:idx%2===0?'transparent':'var(--surf2)'}}>
+                        <td style={{...tdBase,color:'var(--mt)',textAlign:'center'}}>{idx+1}</td>
+                        <td style={{...tdBase,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap'}}>{emp.name}</td>
+                        <td style={{...tdBase,color:'var(--mt)',fontFamily:"'JetBrains Mono'",fontSize:'.74rem'}}>{emp.id}</td>
+                        {activeNLETypes.map(nt=>{
+                          const cnt=allItems.filter(it=>it.type===nt.key).length;
                           return (
-                            <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)', background: idx % 2 === 0 ? 'transparent' : 'var(--surf2)' }}>
-                              <td style={{ padding: '10px 8px', color: 'var(--mt)', textAlign: 'center', fontSize: '.78rem' }}>{idx + 1}</td>
-                              <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--txt)', whiteSpace: 'nowrap' }}>{emp.name}</td>
-                              <td style={{ padding: '10px 8px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.74rem' }}>{emp.id}</td>
-                              {activeTypes.map(nt => {
-                                const cnt = allItems.filter(it => it.type === nt.key).length;
-                                return (
-                                  <td key={nt.key} style={{ padding: '10px 8px', textAlign: 'center', fontWeight: cnt > 0 ? 700 : 400, color: cnt > 0 ? nt.color : 'var(--dim)', fontFamily: "'JetBrains Mono'" }}>
-                                    {cnt > 0 ? cnt : '—'}
-                                  </td>
-                                );
-                              })}
-                              <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--blue)', fontFamily: "'JetBrains Mono'" }}>{allItems.length}</td>
-                              <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--amber)', fontFamily: "'JetBrains Mono'" }}>{wpts}</td>
-                              <td style={{ padding: '10px 8px', textAlign: 'center', color: 'var(--green)', fontFamily: "'JetBrains Mono'", fontSize: '.8rem' }}>{totalMins > 0 ? fmtMin(totalMins) : '—'}</td>
-                              <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 800, color: gc, fontFamily: "'JetBrains Mono'" }}>{sc.final}</td>
-                            </tr>
+                            <td key={nt.key} style={{...tdBase,textAlign:'center',fontWeight:cnt>0?700:400,color:cnt>0?nt.color:'var(--dim)',fontFamily:"'JetBrains Mono'"}}>
+                              {cnt>0?cnt:'—'}
+                            </td>
                           );
                         })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()
-            )}
-          </div>
-        )}
+                        <td style={{...tdBase,textAlign:'center',fontWeight:700,color:'var(--blue)',fontFamily:"'JetBrains Mono'"}}>{allItems.length||'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:700,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{wpts||'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',color:'var(--green)',fontFamily:"'JetBrains Mono'",fontSize:'.78rem'}}>{mins>0?fmtMin(mins):'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-        {/* ── Attendance Section ── */}
-        {section === 'att' && (
-          <div className="card">
-            <div style={{ fontWeight: 700, marginBottom: 14, color: 'var(--txt)', fontSize: '.9rem' }}>🕒 Attendance</div>
-            {(isMultiDay && viewMode === 'breakup') ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead><tr><Th>Employee</Th><Th>Dept</Th><Th>Date</Th><Th center>IN</Th><Th center>OUT</Th><Th center>Status</Th></tr></thead>
-                  <tbody>
-                    {state.emps.filter(e => e.is_active).flatMap(emp =>
-                      dates.map(d => {
-                        const att = state.attendance[emp.id]?.[d] || {};
-                        if (!att.in_time) return null; // skip absent days in breakup
-                        return (
-                          <tr key={emp.id + d} style={{ borderBottom: '1px solid var(--brd)' }}>
-                            <td style={{ padding: '7px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                            <td style={{ padding: '7px 12px', color: 'var(--mt)', fontSize: '.75rem' }}>{emp.dept}</td>
-                            <td style={{ padding: '7px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem' }}>{d}</td>
-                            <td style={{ padding: '7px 12px', textAlign: 'center', color: 'var(--green)', fontWeight: 700, fontSize: '.8rem' }}>{att.in_time || '—'}</td>
-                            <td style={{ padding: '7px 12px', textAlign: 'center', color: 'var(--red)', fontSize: '.8rem' }}>{att.out_time || '—'}</td>
-                            <td style={{ padding: '7px 12px', textAlign: 'center' }}>
-                              <span style={{ background: att.in_time ? 'var(--gl)' : 'var(--rl)', color: att.in_time ? 'var(--green)' : 'var(--red)', padding: '2px 8px', borderRadius: 999, fontSize: '.72rem', fontWeight: 700 }}>
-                                {att.in_time ? 'Present' : 'Absent'}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+        {/* ── NEWS PRODUCERS ── */}
+        {prodEmps.length > 0 && (
+          <div style={{background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:14,overflow:'hidden',marginBottom:20,boxShadow:'var(--sh)'}}>
+            <div style={{background:'linear-gradient(135deg,#059669,#0d9488)',padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:20}}>📋</span>
+                <div>
+                  <div style={{fontWeight:800,fontSize:'1rem',color:'#fff'}}>NEWS PRODUCER</div>
+                  <div style={{fontSize:'.7rem',color:'rgba(255,255,255,.7)'}}>{prodEmps.length} staff</div>
+                </div>
               </div>
-            ) : (
-              // Cumulative attendance summary
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead><tr><Th>Employee</Th><Th>Dept</Th><Th center>Present</Th><Th center>Absent</Th><Th center>Rate</Th></tr></thead>
-                  <tbody>
-                    {empSummary.map(emp => {
-                      const rate = Math.round((emp.presentDays / dates.length) * 100);
-                      return (
-                        <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)' }}>
-                          <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                          <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem' }}>{emp.dept}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--green)', fontWeight: 700 }}>{emp.presentDays}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--red)', fontWeight: 700 }}>{dates.length - emp.presentDays}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            <span style={{ background: rate >= 80 ? 'var(--gl)' : rate >= 50 ? 'var(--al)' : 'var(--rl)', color: rate >= 80 ? 'var(--green)' : rate >= 50 ? 'var(--amber)' : 'var(--red)', padding: '2px 10px', borderRadius: 999, fontSize: '.75rem', fontWeight: 700 }}>
-                              {rate}%
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Scores Section ── */}
-        {section === 'scores' && (
-          <div className="card">
-            <div style={{ fontWeight: 700, marginBottom: 14, color: 'var(--txt)', fontSize: '.9rem' }}>⭐ Performance Scores</div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                <thead><tr><Th>Employee</Th><Th>Dept</Th><Th center>Tasks</Th><Th center>Pts</Th><Th center>Present</Th><Th center>Quality</Th><Th center>Output</Th><Th center>Score</Th></tr></thead>
+              <span style={{fontSize:'.75rem',color:'rgba(255,255,255,.8)',fontFamily:"'JetBrains Mono'"}}>{dateLabel}</span>
+            </div>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.8rem'}}>
+                <thead>
+                  <tr style={{background:'var(--surf2)'}}>
+                    <Th>#</Th><Th>Name</Th><Th>ID</Th>
+                    {PROD_FIELDS.map(f=>(
+                      <th key={f.key} style={{padding:'10px 8px',textAlign:'center',color:f.color,fontWeight:700,
+                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:70}}>
+                        <div style={{fontSize:16,marginBottom:2}}>{f.icon}</div>
+                        <div>{f.label}</div>
+                      </th>
+                    ))}
+                    <Th center>Present</Th>
+                    <Th center>Score</Th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {empSummary.map(emp => {
-                    const grade = emp.sc.final >= 90 ? 'A+' : emp.sc.final >= 80 ? 'A' : emp.sc.final >= 70 ? 'B' : emp.sc.final >= 60 ? 'C' : 'D';
-                    const gc = emp.sc.final >= 80 ? 'var(--green)' : emp.sc.final >= 60 ? 'var(--amber)' : 'var(--red)';
+                  {prodEmps.map((emp,idx)=>{
+                    const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+                    const gc = sc.final>=80?'var(--green)':sc.final>=60?'var(--amber)':'var(--red)';
+                    const present = dates.filter(d=>state.attendance[emp.id]?.[d]?.in_time).length;
                     return (
-                      <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)' }}>
-                        <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                        <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.75rem' }}>{emp.dept}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--txt)' }}>{emp.allItems.length}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--blue)', fontWeight: 700 }}>{emp.wpts}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--mt)' }}>{emp.presentDays}/{dates.length}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--mt)' }}>{emp.sc.qualityScore}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--mt)' }}>{emp.sc.outputScore}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                          <span style={{ fontWeight: 800, color: gc, fontFamily: "'JetBrains Mono'" }}>{emp.sc.final}</span>
-                          <span style={{ marginLeft: 6, fontWeight: 800, color: gc }}>{grade}</span>
-                        </td>
+                      <tr key={emp.id} style={{borderBottom:'1px solid var(--brd)',background:idx%2===0?'transparent':'var(--surf2)'}}>
+                        <td style={{...tdBase,color:'var(--mt)',textAlign:'center'}}>{idx+1}</td>
+                        <td style={{...tdBase,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap'}}>{emp.name}</td>
+                        <td style={{...tdBase,color:'var(--mt)',fontFamily:"'JetBrains Mono'",fontSize:'.74rem'}}>{emp.id}</td>
+                        {PROD_FIELDS.map(f=>{
+                          const v=dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0);
+                          return (
+                            <td key={f.key} style={{...tdBase,textAlign:'center',fontWeight:v>0?700:400,color:v>0?f.color:'var(--dim)',fontFamily:"'JetBrains Mono'"}}>
+                              {v>0?v:'—'}
+                            </td>
+                          );
+                        })}
+                        <td style={{...tdBase,textAlign:'center',color:present>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{present}/{dates.length}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
                       </tr>
                     );
                   })}
@@ -812,141 +788,64 @@ export function ReportPage({ selDate }) {
           </div>
         )}
 
-        {/* ── Entire Team Section ── */}
-        {section === 'team' && (
-          <div>
-            {/* NLE Summary */}
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, marginBottom: 14, color: 'var(--txt)', fontSize: '.9rem' }}>🎬 NLE Editors</div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead><tr><Th>Employee</Th><Th center>Tasks</Th><Th center>Pts</Th><Th center>Present</Th><Th center>IN</Th><Th center>OUT</Th><Th center>Score</Th></tr></thead>
-                  <tbody>
-                    {empSummary.filter(e => e.dept === 'NLE Editor').map(emp => {
-                      const att = dates.length === 1 ? state.attendance[emp.id]?.[dates[0]] : null;
-                      const gc = emp.sc.final >= 80 ? 'var(--green)' : emp.sc.final >= 60 ? 'var(--amber)' : 'var(--red)';
-                      return (
-                        <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)' }}>
-                          <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--blue)', fontWeight: 700 }}>{emp.allItems.length}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--amber)', fontWeight: 700 }}>{emp.wpts}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--mt)' }}>{emp.presentDays}/{dates.length}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--green)', fontFamily: "'JetBrains Mono'", fontSize: '.78rem' }}>{att?.in_time || '—'}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--red)', fontFamily: "'JetBrains Mono'", fontSize: '.78rem' }}>{att?.out_time || '—'}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 800, color: gc, fontFamily: "'JetBrains Mono'" }}>{emp.sc.final}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+        {/* ── VOICE OVER ── */}
+        {voEmps.length > 0 && (
+          <div style={{background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:14,overflow:'hidden',marginBottom:20,boxShadow:'var(--sh)'}}>
+            <div style={{background:'linear-gradient(135deg,#7c3aed,#9333ea)',padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:20}}>🎙</span>
+                <div>
+                  <div style={{fontWeight:800,fontSize:'1rem',color:'#fff'}}>VOICE OVER</div>
+                  <div style={{fontSize:'.7rem',color:'rgba(255,255,255,.7)'}}>{voEmps.length} staff</div>
+                </div>
               </div>
+              <span style={{fontSize:'.75rem',color:'rgba(255,255,255,.8)',fontFamily:"'JetBrains Mono'"}}>{dateLabel}</span>
             </div>
-            {/* News Producer Summary */}
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, marginBottom: 14, color: 'var(--txt)', fontSize: '.9rem' }}>📋 News Producers</div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead><tr><Th>Employee</Th>{PROD_FIELDS.map(f=><Th key={f.key} center>{f.icon} {f.label}</Th>)}<Th center>Present</Th><Th center>Score</Th></tr></thead>
-                  <tbody>
-                    {empSummary.filter(e => e.dept === 'News Producer').map(emp => {
-                      const gc = emp.sc.final >= 80 ? 'var(--green)' : emp.sc.final >= 60 ? 'var(--amber)' : 'var(--red)';
-                      return (
-                        <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)' }}>
-                          <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                          {PROD_FIELDS.map(f => {
-                            const v = dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0);
-                            return <td key={f.key} style={{ padding: '8px 10px', textAlign: 'center', color: v>0?f.color:'var(--dim)', fontWeight: v>0?700:400 }}>{v||'—'}</td>;
-                          })}
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--mt)' }}>{emp.presentDays}/{dates.length}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 800, color: gc, fontFamily: "'JetBrains Mono'" }}>{emp.sc.final}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            {/* Voice Over Summary */}
-            <div className="card">
-              <div style={{ fontWeight: 700, marginBottom: 14, color: 'var(--txt)', fontSize: '.9rem' }}>🎙 Voice Over</div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead><tr><Th>Employee</Th>{VO_FIELDS.map(f=><Th key={f.key} center>{f.icon} {f.label}</Th>)}<Th center>Present</Th><Th center>Score</Th></tr></thead>
-                  <tbody>
-                    {empSummary.filter(e => e.dept === 'Voice Over').map(emp => {
-                      const gc = emp.sc.final >= 80 ? 'var(--green)' : emp.sc.final >= 60 ? 'var(--amber)' : 'var(--red)';
-                      return (
-                        <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)' }}>
-                          <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                          {VO_FIELDS.map(f => {
-                            const v = dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0);
-                            return <td key={f.key} style={{ padding: '8px 10px', textAlign: 'center', color: v>0?f.color:'var(--dim)', fontWeight: v>0?700:400 }}>{v||'—'}</td>;
-                          })}
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--mt)' }}>{emp.presentDays}/{dates.length}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 800, color: gc, fontFamily: "'JetBrains Mono'" }}>{emp.sc.final}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Producers Section ── */}
-        {section === 'prod' && (
-          <div className="card">
-            <div style={{ fontWeight: 700, marginBottom: 14, color: 'var(--txt)', fontSize: '.9rem' }}>🎙 Producers & Voice Over</div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.8rem'}}>
                 <thead>
-                  <tr>
-                    <Th>Employee</Th>
-                    {!isMultiDay || viewMode === 'breakup' ? <Th>Date</Th> : null}
-                    {[...PROD_FIELDS, ...VO_FIELDS].filter((f, i, a) => a.findIndex(x => x.key === f.key) === i).map(f => (
-                      <Th key={f.key} center>{f.icon} {f.label}</Th>
+                  <tr style={{background:'var(--surf2)'}}>
+                    <Th>#</Th><Th>Name</Th><Th>ID</Th>
+                    {VO_FIELDS.map(f=>(
+                      <th key={f.key} style={{padding:'10px 8px',textAlign:'center',color:f.color,fontWeight:700,
+                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:70}}>
+                        <div style={{fontSize:16,marginBottom:2}}>{f.icon}</div>
+                        <div>{f.label}</div>
+                      </th>
                     ))}
+                    <Th center>Present</Th>
+                    <Th center>Score</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {state.emps.filter(e => e.is_active && (e.dept === 'News Producer' || e.dept === 'Voice Over')).flatMap(emp => {
-                    const fields = emp.dept === 'News Producer' ? PROD_FIELDS : VO_FIELDS;
-                    const allF = [...PROD_FIELDS, ...VO_FIELDS].filter((f, i, a) => a.findIndex(x => x.key === f.key) === i);
-                    if (isMultiDay && viewMode === 'breakup') {
-                      return dates.map(d => {
-                        const pd = state.prodDaily[emp.id]?.[d] || {};
-                        const att = state.attendance[emp.id]?.[d];
-                        const hasData = fields.some(f => parseInt(pd[f.key]) > 0) || att?.in_time;
-                        if (!hasData) return null;
-                        return (
-                          <tr key={emp.id + d} style={{ borderBottom: '1px solid var(--brd)' }}>
-                            <td style={{ padding: '7px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                            <td style={{ padding: '7px 12px', color: 'var(--mt)', fontSize: '.75rem', fontFamily: "'JetBrains Mono'" }}>{d}</td>
-                            {allF.map(f => { const v = parseInt(pd[f.key]) || 0; return <td key={f.key} style={{ padding: '7px 10px', textAlign: 'center', color: v > 0 ? f.color : 'var(--dim)', fontWeight: v > 0 ? 700 : 400 }}>{v || '—'}</td>; })}
-                          </tr>
-                        );
-                      });
-                    } else {
-                      // Cumulative totals
-                      const totals = {};
-                      fields.forEach(f => { totals[f.key] = dates.reduce((s, d) => s + (parseInt(state.prodDaily[emp.id]?.[d]?.[f.key]) || 0), 0); });
-                      return [(
-                        <tr key={emp.id} style={{ borderBottom: '1px solid var(--brd)' }}>
-                          <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 600 }}>{emp.name}</td>
-                          {allF.map(f => {
-                            const v = totals[f.key] || 0;
-                            return <td key={f.key} style={{ padding: '8px 10px', textAlign: 'center', color: v > 0 ? f.color : 'var(--dim)', fontWeight: v > 0 ? 700 : 400 }}>{v || '—'}</td>;
-                          })}
-                        </tr>
-                      )];
-                    }
+                  {voEmps.map((emp,idx)=>{
+                    const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+                    const gc = sc.final>=80?'var(--green)':sc.final>=60?'var(--amber)':'var(--red)';
+                    const present = dates.filter(d=>state.attendance[emp.id]?.[d]?.in_time).length;
+                    return (
+                      <tr key={emp.id} style={{borderBottom:'1px solid var(--brd)',background:idx%2===0?'transparent':'var(--surf2)'}}>
+                        <td style={{...tdBase,color:'var(--mt)',textAlign:'center'}}>{idx+1}</td>
+                        <td style={{...tdBase,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap'}}>{emp.name}</td>
+                        <td style={{...tdBase,color:'var(--mt)',fontFamily:"'JetBrains Mono'",fontSize:'.74rem'}}>{emp.id}</td>
+                        {VO_FIELDS.map(f=>{
+                          const v=dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0);
+                          return (
+                            <td key={f.key} style={{...tdBase,textAlign:'center',fontWeight:v>0?700:400,color:v>0?f.color:'var(--dim)',fontFamily:"'JetBrains Mono'"}}>
+                              {v>0?v:'—'}
+                            </td>
+                          );
+                        })}
+                        <td style={{...tdBase,textAlign:'center',color:present>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{present}/{dates.length}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

@@ -76,7 +76,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
 
   if (loading) return (
     <div className="loader-screen">
-      <img src={tjLogo} alt="TamilJanam" style={{height:60,width:'auto',objectFit:'contain',marginBottom:4}}/>
+      <img src={`${import.meta.env.BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:60,width:'auto',objectFit:'contain',marginBottom:4}}/>
       <div className="loader-spinner" />
       <div className="loader-text">Loading admin workspace…</div>
     </div>
@@ -92,7 +92,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
       {/* ── Topbar ── */}
       <header className="topbar">
         <div className="topbar-brand" style={{display:'flex',alignItems:'center',gap:8}}>
-          <img src={tjLogo} alt="TamilJanam" style={{height:34,width:'auto',objectFit:'contain'}}/>
+          <img src={`${import.meta.env.BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:34,width:'auto',objectFit:'contain'}}/>
           <span className="admin-badge">Admin</span>
         </div>
         <div className="topbar-center">

@@ -39,7 +39,7 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
 
   if (loading) return (
     <div className="loader-screen">
-      <img src={tjLogo} alt="TamilJanam" style={{height:60,width:'auto',objectFit:'contain',marginBottom:4}}/>
+      <img src={`${import.meta.env.BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:60,width:'auto',objectFit:'contain',marginBottom:4}}/>
       <div className="loader-spinner" />
       <div className="loader-text">Loading workspace…</div>
     </div>
@@ -55,7 +55,7 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
       {/* ── Topbar ── */}
       <header className="topbar">
         <div className="topbar-brand" style={{display:'flex',alignItems:'center'}}>
-          <img src={tjLogo} alt="TamilJanam" style={{height:34,width:'auto',objectFit:'contain'}}/>
+          <img src={`${import.meta.env.BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:34,width:'auto',objectFit:'contain'}}/>
         </div>
         <div className="topbar-center">
           <div className="emp-info-topbar">

@@ -605,13 +605,30 @@ export function ReportPage({ selDate }) {
   };
 
   const exportImage = async () => {
+    const el = reportRef.current;
+    if (!el) return;
     try {
-      const canvas = await html2canvas(reportRef.current,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+      // Temporarily expand element to full scroll height so entire content is captured
+      const prevHeight = el.style.height;
+      const prevOverflow = el.style.overflow;
+      el.style.height  = el.scrollHeight + 'px';
+      el.style.overflow = 'visible';
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+      el.style.height   = prevHeight;
+      el.style.overflow = prevOverflow;
       const link = document.createElement('a');
       link.download = `TJ_Report_${today}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
-    } catch(e){console.error(e);}
+    } catch(e){ console.error(e); }
   };
 
   // Reusable table styles

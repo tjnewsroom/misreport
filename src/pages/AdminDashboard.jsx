@@ -10,6 +10,8 @@ import { Overview, TodayWork, AttendancePage } from '../components/AdminPages1';
 import { ShiftPlanner, StaffManagement, ShiftRequests } from '../components/AdminPages2';
 import { QualityPage, ReliabilityPage, ProducersPage, TaskSearchPage, ReportPage } from '../components/AdminPages3';
 
+const BASE_URL = import.meta.env.BASE_URL;
+
 const buildNavSections = (hasEmpRecord) => {
   const sections = [];
   if (hasEmpRecord) {
@@ -83,7 +85,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
   if (loading) {
     return (
       <div className="loader-screen">
-        <img src="/tj-logo.png" alt="TamilJanam" style={{height:60,width:"auto",objectFit:"contain",marginBottom:4}}/>
+        <img src={`${BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:60,width:"auto",objectFit:"contain",marginBottom:4}}/>
         <div className="loader-spinner" />
         <div className="loader-text">Loading admin workspace…</div>
       </div>
@@ -100,7 +102,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
       <header className="topbar">
         <button className="mobile-menu-btn" onClick={() => setMobileNavOpen(s => !s)}>☰</button>
         <div className="topbar-brand" style={{display:'flex',alignItems:'center',gap:10}}>
-          <img src="/tj-logo.png" alt="TamilJanam" style={{height:36,width:'auto',objectFit:'contain'}}/>
+          <img src={`${BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:36,width:'auto',objectFit:'contain'}}/>
           <span className="admin-badge">Admin</span>
         </div>
         <div className="topbar-center">

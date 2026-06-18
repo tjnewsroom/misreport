@@ -9,6 +9,8 @@ import HistoryTab from '../components/HistoryTab';
 import ShiftChatbot from '../components/ShiftChatbot';
 import { TaskSearchPage } from '../components/AdminPages3';
 
+const BASE_URL = import.meta.env.BASE_URL;
+
 const EMP_TABS = [
   { id: 'daily',   label: 'Daily Entry', icon: '📋' },
   { id: 'breaks',  label: 'Breaks',      icon: '☕' },
@@ -47,8 +49,7 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
 
   if (loading) return (
     <div className="loader-screen">
-      <div className="loader-logo">📺</div>
-      <div className="loader-brand">TamilJanam MIS</div>
+      <img src={`${BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:60,width:"auto",objectFit:"contain",marginBottom:4}}/>
       <div className="loader-spinner" />
       <div className="loader-text">Loading workspace…</div>
     </div>
@@ -64,7 +65,7 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
       <header className="topbar">
         <button className="mobile-menu-btn" onClick={() => setMobileNavOpen(s => !s)}>☰</button>
         <div className="topbar-brand" style={{display:'flex',alignItems:'center'}}>
-          <img src="/tj-logo.png" alt="TamilJanam" style={{height:36,width:'auto',objectFit:'contain'}}/>
+          <img src={`${BASE_URL}tj-logo.png`} alt="TamilJanam" style={{height:36,width:'auto',objectFit:'contain'}}/>
         </div>
         <div className="topbar-center">
           <div className="emp-info-topbar">

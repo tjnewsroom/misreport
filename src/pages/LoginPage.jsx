@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { sb } from '../lib/supabase';
 
+const BASE_URL = import.meta.env.BASE_URL;
 const PETALS = ['🌸','🌺','🌼','🌻','✨','🎊','💫','⭐'];
 
 function FlowerShower() {
@@ -32,7 +33,7 @@ function WelcomeOverlay({ user, empName, onDismiss }) {
     <div className="welcome-overlay">
       <FlowerShower />
       <div className="welcome-card">
-        <img src="/tj-logo.png" alt="TamilJanam" style={{ width: 140, marginBottom: 16, objectFit: 'contain' }} />
+        <img src={`${BASE_URL}tj-logo.png`} alt="TamilJanam" style={{ width: 140, marginBottom: 16, objectFit: 'contain' }} />
         <div className="welcome-greeting">{greeting}!</div>
         <div className="welcome-name">{name}</div>
         <p className="welcome-msg">{msg}</p>
@@ -110,7 +111,7 @@ export default function LoginPage({ onLogin }) {
       }}>
         {/* Logo */}
         <div style={{textAlign:'center', marginBottom:28}}>
-          <img src="/tj-logo.png" alt="TamilJanam" style={{
+          <img src={`${BASE_URL}tj-logo.png`} alt="TamilJanam" style={{
             width:200, maxHeight:90, objectFit:'contain', display:'inline-block'
           }}/>
           <div style={{

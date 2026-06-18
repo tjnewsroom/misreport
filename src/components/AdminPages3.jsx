@@ -332,21 +332,8 @@ export function TaskSearchPage({ empId: filterEmpId }) {
         .order('date', { ascending: false })
         .limit(5000);
 
-      if (isNLEEditor) {
-        // Find own UUID
-        const myUUID = filterEmp?._uuid;
-        if (!myUUID) {
-          // Fallback: look up UUID via employees table
-          const { data: empRow } = await sb
-            .from('employees')
-            .select('id')
-            .eq('emp_code', filterEmpId)
-            .single();
-          if (empRow) query = query.eq('emp_id', empRow.id);
-        } else {
-          query = query.eq('emp_id', myUUID);
-        }
-      }
+        // All roles (admin, news producer, NLE editor) search ALL NLE editors
+      // No emp_id filter — fetch entire department
 
       // Apply text search if term provided
       if (term) {
@@ -400,10 +387,7 @@ export function TaskSearchPage({ empId: filterEmpId }) {
     XLSX.writeFile(wb, `TJ_Search_${todayStr()}.xlsx`);
   };
 
-  const roleLabel = isAdmin        ? 'All NLE Editors — live from database'
-                  : isNewsProducer ? 'All NLE Editors — live from database'
-                  : isNLEEditor    ? 'Your tasks — live from database'
-                  :                  'Task search';
+  const roleLabel = 'All NLE Editors — live from database';
 
   return (
     <div style={{ padding: 20 }}>

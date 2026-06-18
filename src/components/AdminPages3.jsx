@@ -319,23 +319,19 @@ export function TaskSearchPage({ empId: filterEmpId }) {
     setResults(null);
 
     try {
-      // ── Build employee UUID→name+code map from already-loaded emps ──────
-      const empMap = {}; // uuid → { name, empCode, dept }
-      state.emps.forEach(e => { empMap[e._uuid] = { name: e.name, empCode: e.id, dept: e.dept }; });
-
-      // ── Fetch nle_daily_entries fresh from Supabase ──────────────────────
-      // Admin + News Producer → ALL editors
-      // NLE Editor → own entries only (filter by emp UUID)
+      // ── JOIN nle_daily_entries with employees directly in Supabase ────────
+      // This avoids empMap/_uuid dependency entirely — works for all roles
       let query = sb
         .from('nle_daily_entries')
-        .select('id, emp_id, date, news_type, description, start_time, end_time')
+        .select(`
+          id, emp_id, date, news_type, description, start_time, end_time,
+          employees!inner ( emp_code, name, dept )
+        `)
+        .eq('employees.dept', 'NLE Editor')
         .order('date', { ascending: false })
         .limit(5000);
 
-        // All roles (admin, news producer, NLE editor) search ALL NLE editors
-      // No emp_id filter — fetch entire department
-
-      // Apply text search if term provided
+      // Apply DB-level text search on description and news_type
       if (term) {
         query = query.or(
           `description.ilike.%${term}%,news_type.ilike.%${term}%`
@@ -345,25 +341,24 @@ export function TaskSearchPage({ empId: filterEmpId }) {
       const { data: rows, error: dbErr } = await query;
       if (dbErr) { setError('Search failed: ' + dbErr.message); setLoading(false); return; }
 
-      // ── Map results to display format ─────────────────────────────────────
+      // ── Map and apply client-side name filter ─────────────────────────────
       const found = (rows || [])
         .map(r => {
-          const emp = empMap[r.emp_id];
-          // Skip if not NLE editor dept (for admin/producer searching all NLE)
-          if (emp && emp.dept !== 'NLE Editor') return null;
-          // For term search on emp name (not in DB query — filter client side)
+          const emp = r.employees;
+          if (!emp || emp.dept !== 'NLE Editor') return null;
           const nt = NEWS_TYPES.find(n => n.key === r.news_type);
-          if (term && emp) {
-            const hay = [emp.name, r.news_type, nt?.label || '', r.description || ''].join(' ').toLowerCase();
+          // Client-side filter for employee name search
+          if (term) {
+            const hay = [emp.name, emp.emp_code, r.news_type, nt?.label || '', r.description || ''].join(' ').toLowerCase();
             if (!hay.includes(term)) return null;
           }
           return {
-            empName: emp?.name || r.emp_id,
-            empCode: emp?.empCode || '',
-            dept:    emp?.dept || 'NLE Editor',
-            date:    r.date,
-            type:    r.news_type,
-            desc:    r.description || '',
+            empName:   emp.name,
+            empCode:   emp.emp_code,
+            dept:      emp.dept,
+            date:      r.date,
+            type:      r.news_type,
+            desc:      r.description || '',
             startTime: r.start_time?.slice(0,5) || '',
             endTime:   r.end_time?.slice(0,5)   || '',
             nt,

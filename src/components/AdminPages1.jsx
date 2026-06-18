@@ -199,18 +199,27 @@ export function TodayWork({ selDate }) {
               let totalGap=0;
               for(let i=1;i<items.length;i++){const g=tdiff(items[i-1].endTime,items[i].startTime);if(g>0)totalGap+=g;}
               const pd=state.prodDaily[e.id]?.[selDate]||{};
+              const isProdVO = dept==='News Producer'||dept==='Voice Over';
+              const prodFields = isProdVO ? (dept==='News Producer'?PROD_FIELDS:VO_FIELDS) : [];
+              const hasProdData = prodFields.some(f=>parseInt(pd[f.key])>0);
+              const hasAnyData = items.length>0 || hasProdData;
               return (
-                <div key={e.id} className="card" style={{marginBottom:10,borderLeft:`3px solid ${items.length?dc:'var(--brd)'}`}}>
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:items.length?12:0}}>
+                <div key={e.id} className="card" style={{marginBottom:10,borderLeft:`3px solid ${hasAnyData?dc:'var(--brd)'}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:hasAnyData?12:0}}>
                     <div style={{width:36,height:36,borderRadius:9,background:`${dc}18`,color:dc,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{e.name[0]}</div>
                     <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{e.name}</div><div style={{fontSize:10,color:'var(--mt)',fontFamily:"'JetBrains Mono'"}}>{e.id}</div></div>
                     <div style={{display:'flex',gap:12,textAlign:'center'}}>
-                      {items.length ? (
+                      {items.length>0 && dept==='NLE Editor' ? (
                         <>
                           <div><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{items.length}</div><div style={{fontSize:9,color:'var(--mt)'}}>ITEMS</div></div>
                           <div><div style={{fontSize:16,fontWeight:800,color:'var(--green)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(mins)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TIME</div></div>
                           <div><div style={{fontSize:16,fontWeight:800,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{wpts}</div><div style={{fontSize:9,color:'var(--mt)'}}>PTS</div></div>
                           {totalGap>0&&<div><div style={{fontSize:16,fontWeight:800,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(totalGap)}</div><div style={{fontSize:9,color:'var(--mt)'}}>GAP</div></div>}
+                        </>
+                      ) : isProdVO && hasProdData ? (
+                        <>
+                          <div><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{prodFields.reduce((s,f)=>s+(parseInt(pd[f.key])||0),0)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TOTAL</div></div>
+                          {state.attendance[e.id]?.[selDate]?.in_time && <div><div style={{fontSize:16,fontWeight:800,color:'var(--green)'}}>✓</div><div style={{fontSize:9,color:'var(--mt)'}}>PRESENT</div></div>}
                         </>
                       ) : <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic'}}>No entry</div>}
                     </div>
@@ -236,11 +245,35 @@ export function TodayWork({ selDate }) {
                       </table>
                     </div>
                   )}
-                  {items.length>0 && (dept==='News Producer'||dept==='Voice Over') && (
-                    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
-                      {(dept==='News Producer'?PROD_FIELDS:VO_FIELDS).map(f=>{const v=parseInt(pd[f.key])||0;return v>0?<span key={f.key} className="bdg" style={{background:`${f.color}18`,color:f.color}}>{f.icon} {f.label}: <b>{v}</b></span>:null;})}
-                    </div>
-                  )}
+                  {(dept==='News Producer'||dept==='Voice Over') && (() => {
+                    const fields = dept==='News Producer' ? PROD_FIELDS : VO_FIELDS;
+                    const hasData = fields.some(f => parseInt(pd[f.key]) > 0);
+                    if (!hasData) return <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic',marginTop:4}}>No entry yet</div>;
+                    const total = fields.reduce((s,f)=>s+(parseInt(pd[f.key])||0),0);
+                    return (
+                      <div style={{marginTop:10}}>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:8}}>
+                          {fields.map(f=>{
+                            const v=parseInt(pd[f.key])||0;
+                            return v>0 ? (
+                              <div key={f.key} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:8,background:`${f.color}12`,border:`1px solid ${f.color}30`}}>
+                                <span style={{fontSize:16}}>{f.icon}</span>
+                                <div>
+                                  <div style={{fontSize:11,color:'var(--mt)'}}>{f.label}</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:f.color,fontFamily:"'JetBrains Mono'"}}>{v}</div>
+                                </div>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                        {pd.notes && <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic',padding:'6px 10px',background:'var(--surf2)',borderRadius:6}}>📝 {pd.notes}</div>}
+                        <div style={{display:'flex',gap:16,marginTop:8}}>
+                          <span style={{fontSize:12,fontWeight:700,color:dc}}>Total: {total} activities</span>
+                          {state.attendance[e.id]?.[selDate]?.in_time && <span style={{fontSize:12,color:'var(--green)'}}>✓ Present</span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

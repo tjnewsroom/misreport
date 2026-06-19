@@ -301,6 +301,7 @@ export function ProducersPage({ selDate }) {
 export function TaskSearchPage({ empId: filterEmpId }) {
   const { state } = useApp();
   const [q, setQ]             = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -331,6 +332,10 @@ export function TaskSearchPage({ empId: filterEmpId }) {
         .order('date', { ascending: false })
         .limit(5000);
 
+      if (typeFilter !== 'all') {
+        query = query.eq('news_type', typeFilter);
+      }
+
       // Apply DB-level text search on description and news_type
       if (term) {
         query = query.or(
@@ -346,6 +351,7 @@ export function TaskSearchPage({ empId: filterEmpId }) {
         .map(r => {
           const emp = r.employees;
           if (!emp || emp.dept !== 'NLE Editor') return null;
+          if (typeFilter !== 'all' && r.news_type !== typeFilter) return null;
           const nt = NEWS_TYPES.find(n => n.key === r.news_type);
           // Client-side filter for employee name search
           if (term) {
@@ -404,9 +410,20 @@ export function TaskSearchPage({ empId: filterEmpId }) {
 
       <div className="card">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <select
+            className="inp"
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            style={{ minWidth: 180 }}
+          >
+            <option value="all">All News Types</option>
+            {NEWS_TYPES.map(nt => (
+              <option key={nt.key} value={nt.key}>{nt.icon} {nt.label}</option>
+            ))}
+          </select>
           <input
             className="inp"
-            placeholder="Search news type, description, editor name… (leave empty for all)"
+            placeholder="Search headlines, description, editor name…"
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}

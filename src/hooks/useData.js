@@ -64,6 +64,9 @@ export function useData() {
     dispatch({ type: 'SET_ATTENDANCE', payload: attRaw });
 
     // ── NLE Daily ──────────────────────────────────────────────
+    // Note: only ordering by `date` leaves same-day rows in an unstable order
+    // (Postgres makes no guarantee), so we add a deterministic client-side
+    // sort below by start_time (falling back to created_at) per day.
     const nleRows = await fetchAll('nle_daily_entries', { order: 'date' });
     const daily = {};
     nleRows.forEach(r => {
@@ -73,7 +76,20 @@ export function useData() {
       daily[code][r.date].push({
         _id: r.id, type: r.news_type, desc: r.description || '',
         startTime: r.start_time?.slice(0, 5) || '', endTime: r.end_time?.slice(0, 5) || '',
-        manualMins: r.manual_mins || 0
+        manualMins: r.manual_mins || 0, _createdAt: r.created_at
+      });
+    });
+    // Deterministic order: by start_time, then created_at as a tiebreaker/fallback
+    Object.values(daily).forEach(byDate => {
+      Object.values(byDate).forEach(items => {
+        items.sort((a, b) => {
+          if (a.startTime && b.startTime && a.startTime !== b.startTime) {
+            return a.startTime < b.startTime ? -1 : 1;
+          }
+          if (a.startTime && !b.startTime) return -1;
+          if (!a.startTime && b.startTime) return 1;
+          return (a._createdAt || '') < (b._createdAt || '') ? -1 : 1;
+        });
       });
     });
     dispatch({ type: 'SET_DAILY', payload: daily });

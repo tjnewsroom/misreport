@@ -128,51 +128,61 @@ export default function DailyEntry({ empId, dept, selDate }) {
   };
 
   const addItem = async () => {
-    if (isAddingRef.current) return; // synchronous check — blocks before any await
+    if (isAddingRef.current || isSavingRef.current) return; // synchronous check — blocks before any await, and blocks while a Save is in flight
     isAddingRef.current = true;
     setAddingItem(true);
-    if (items.length) {
-      const last = items[items.length-1];
-      if (!last.startTime || !last.endTime) {
-        toast('⚠️ IN and OUT time required for Task '+items.length+' before adding new.', 'er');
-        return;
+    try {
+      if (items.length) {
+        const last = items[items.length-1];
+        if (!last.startTime || !last.endTime) {
+          toast('⚠️ IN and OUT time required for Task '+items.length+' before adding new.', 'er');
+          return;
+        }
+        // If last item already has _id it was saved — skip re-saving to prevent duplicate
+        if (!last._id) {
+          const savedOk = await saveNLEItem(empId, selDate, last);
+          if (!savedOk) return;
+        }
+        // ✅ Update state with _id (handles both new save and already-saved cases)
+        const updatedItems = items.map((it, i) =>
+          i === items.length - 1 ? { ...it, _id: last._id } : it
+        );
+        const newItems = [...updatedItems, { type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
+        dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
+      } else {
+        const newItems = [{ type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
+        dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
       }
-      // If last item already has _id it was saved — skip re-saving to prevent duplicate
-      if (!last._id) {
-        const savedOk = await saveNLEItem(empId, selDate, last);
-        if (!savedOk) return;
-      }
-      // ✅ Update state with _id (handles both new save and already-saved cases)
-      const updatedItems = items.map((it, i) =>
-        i === items.length - 1 ? { ...it, _id: last._id } : it
-      );
-      const newItems = [...updatedItems, { type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
-      dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
-    } else {
-      const newItems = [{ type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
-      dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
+    } finally {
+      // Always release the lock, even on early return/error, so the button never gets stuck disabled
+      isAddingRef.current = false;
+      setAddingItem(false);
     }
-    isAddingRef.current = false;
-    setAddingItem(false);
   };
 
   const saveItem = async (idx) => {
-    if (isSavingRef.current) return; // synchronous check
+    if (isSavingRef.current || isAddingRef.current) return; // synchronous check — also blocks while Add is in flight
     isSavingRef.current = true;
-    const it = items[idx];
-    if (!it.startTime || !it.endTime) { toast('⚠️ IN and OUT time required.', 'er'); return; }
-    if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
     setSavingIdx(idx);
-    const ok = await saveNLEItem(empId, selDate, it);
-    if (ok) {
-      // ✅ Always propagate _id back into state after save
-      // it._id is written by saveNLEItem (INSERT sets it, UPDATE keeps it)
-      // We ALWAYS dispatch so state stays in sync regardless of new/existing
-      const updatedItems = items.map((item, i) =>
-        i === idx ? { ...item, _id: it._id } : item
-      );
-      dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:updatedItems }});
-      toast('✓ Saved');
+    try {
+      const it = items[idx];
+      if (!it.startTime || !it.endTime) { toast('⚠️ IN and OUT time required.', 'er'); return; }
+      if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
+      const ok = await saveNLEItem(empId, selDate, it);
+      if (ok) {
+        // ✅ Always propagate _id back into state after save
+        // it._id is written by saveNLEItem (INSERT sets it, UPDATE keeps it)
+        // We ALWAYS dispatch so state stays in sync regardless of new/existing
+        const updatedItems = items.map((item, i) =>
+          i === idx ? { ...item, _id: it._id } : item
+        );
+        dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:updatedItems }});
+        toast('✓ Saved');
+      }
+    } finally {
+      // Always release the lock, even on early return/error, so Save never gets stuck disabled/blocked
+      isSavingRef.current = false;
+      setSavingIdx(null);
     }
   };
 
@@ -268,7 +278,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
                         <button onClick={()=>setNow(realIdx,'endTime')} style={{ background:'var(--gl)', border:'none', borderRadius:5, padding:'2px 6px', fontSize:10, color:'var(--green)', cursor:'pointer', fontWeight:700 }}>Now</button>
                       </div>
                       {mins !== null && <span style={{ fontSize:12, fontWeight:700, color:'var(--green)', fontFamily:"'JetBrains Mono'", background:'var(--gl)', padding:'3px 10px', borderRadius:6 }}>⏱ {fmtMin(mins)}</span>}
-                      <button className="btn btn-p btn-sm" onClick={()=>saveItem(realIdx)} disabled={savingIdx===realIdx || addingItem}>
+                      <button className="btn btn-p btn-sm" onClick={()=>saveItem(realIdx)} disabled={savingIdx!==null || addingItem}>
                         {savingIdx===realIdx ? '⏳…' : '💾 Save'}
                       </button>
                     </div>

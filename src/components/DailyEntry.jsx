@@ -143,9 +143,11 @@ export default function DailyEntry({ empId, dept, selDate }) {
           const savedOk = await saveNLEItem(empId, selDate, last);
           if (!savedOk) return;
         }
-        // ✅ Update state with _id (handles both new save and already-saved cases)
+        // ✅ Update state with _id AND _clientKey (handles both new save and already-saved cases)
+        // _clientKey must be carried forward or a fresh one gets generated on next save,
+        // defeating the idempotency protection.
         const updatedItems = items.map((it, i) =>
-          i === items.length - 1 ? { ...it, _id: last._id } : it
+          i === items.length - 1 ? { ...it, _id: last._id, _clientKey: last._clientKey } : it
         );
         const newItems = [...updatedItems, { type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
         dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
@@ -170,11 +172,12 @@ export default function DailyEntry({ empId, dept, selDate }) {
       if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
       const ok = await saveNLEItem(empId, selDate, it);
       if (ok) {
-        // ✅ Always propagate _id back into state after save
+        // ✅ Always propagate _id AND _clientKey back into state after save
         // it._id is written by saveNLEItem (INSERT sets it, UPDATE keeps it)
-        // We ALWAYS dispatch so state stays in sync regardless of new/existing
+        // it._clientKey is generated on first INSERT — must persist in state or
+        // a fresh one gets generated next time, defeating the idempotency protection.
         const updatedItems = items.map((item, i) =>
-          i === idx ? { ...item, _id: it._id } : item
+          i === idx ? { ...item, _id: it._id, _clientKey: it._clientKey } : item
         );
         dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:updatedItems }});
         toast('✓ Saved');

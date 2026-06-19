@@ -76,7 +76,7 @@ export function useData() {
       daily[code][r.date].push({
         _id: r.id, type: r.news_type, desc: r.description || '',
         startTime: r.start_time?.slice(0, 5) || '', endTime: r.end_time?.slice(0, 5) || '',
-        manualMins: r.manual_mins || 0, _createdAt: r.created_at
+        manualMins: r.manual_mins || 0, _createdAt: r.created_at, _clientKey: r.client_key || null
       });
     });
     // Deterministic order: by start_time, then created_at as a tiebreaker/fallback
@@ -157,31 +157,40 @@ export function useData() {
       if (error) { toast('Save failed: ' + error.message, 'er'); return false; }
       return true;
     } else {
-      // INSERT new row
-      // Extra guard: check if identical row already exists in DB within last 5 seconds
-      // This catches any race condition that slips past the useRef lock
-      const { data: existing } = await sb.from('nle_daily_entries')
-        .select('id')
-        .eq('emp_id', uuid)
-        .eq('date', date)
-        .eq('news_type', item.type)
-        .eq('start_time', item.startTime || '')
-        .eq('end_time', item.endTime || '')
-        .gte('created_at', new Date(Date.now() - 5000).toISOString())
-        .limit(1);
-
-      if (existing && existing.length > 0) {
-        // Row already exists from a duplicate call — reuse its id
-        console.warn('🔒 Duplicate INSERT blocked — reusing existing row', existing[0].id);
-        item._id = existing[0].id;
-        return true;
+      // INSERT new row — protected by client_key unique constraint (DB-level).
+      // client_key is generated ONCE per item, the first time it's saved.
+      // If this exact insert is retried (double-click, race condition, network retry,
+      // multiple tabs), the unique constraint on client_key rejects the duplicate
+      // at the DATABASE level — this is bulletproof, unlike a time-window check.
+      if (!item._clientKey) {
+        item._clientKey = crypto.randomUUID();
       }
 
       const { data, error } = await sb.from('nle_daily_entries').insert({
         emp_id: uuid, date, news_type: item.type, description: item.desc || '',
-        start_time: item.startTime || null, end_time: item.endTime || null, manual_mins: item.manualMins || 0
+        start_time: item.startTime || null, end_time: item.endTime || null, manual_mins: item.manualMins || 0,
+        client_key: item._clientKey,
       }).select().single();
-      if (error) { toast('Save failed: ' + error.message, 'er'); return false; }
+
+      if (error) {
+        // Postgres unique_violation = this exact insert already succeeded
+        // (race condition / retry). Fetch the existing row instead of failing.
+        if (error.code === '23505') {
+          console.warn('🔒 Duplicate insert caught by client_key constraint — fetching existing row');
+          const { data: existingRow } = await sb
+            .from('nle_daily_entries')
+            .select('id')
+            .eq('client_key', item._clientKey)
+            .single();
+          if (existingRow) {
+            item._id = existingRow.id;
+            return true;
+          }
+        }
+        toast('Save failed: ' + error.message, 'er');
+        return false;
+      }
+
       item._id = data.id;
       return true;
     }

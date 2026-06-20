@@ -1,5 +1,6 @@
 import { useApp } from '../hooks/useApp';
-import { calcScore, perfBadge } from '../lib/utils';
+import { calcScore, perfBadge, lastNMonths, monthLabel } from '../lib/utils';
+import MiniLineChart from './MiniLineChart';
 
 export default function ScoreTab({ empId, dept }) {
   const { state } = useApp();
@@ -8,6 +9,10 @@ export default function ScoreTab({ empId, dept }) {
   const sc = calcScore(empId, dept, monthKey, state.daily, state.prodDaily, state.quality, state.reliability);
   const b = perfBadge(sc.final);
   const R=44, circ=2*Math.PI*R, dash=circ*sc.final/100;
+
+  // Last 6 months trend — reuses the same calcScore engine, just looped across months.
+  const months = lastNMonths(6);
+  const trend = months.map(m => calcScore(empId, dept, m, state.daily, state.prodDaily, state.quality, state.reliability).final);
 
   return (
     <div>
@@ -35,6 +40,10 @@ export default function ScoreTab({ empId, dept }) {
         {[{l:'Quality',v:sc.qualityScore,c:'var(--green)'},{l:'Output',v:sc.outputScore,c:'var(--blue)'},{l:'Reliability',v:sc.reliScore,c:'var(--amber)'},{l:'Creativity',v:sc.creativityScore,c:'var(--purple)'}].map(s=>(
           <div key={s.l} className="sc"><div className="sv" style={{ color:s.c }}>{s.v}</div><div className="sl">{s.l}</div></div>
         ))}
+      </div>
+      <div className="card" style={{ marginTop:16 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:'var(--txt)', marginBottom:12 }}>📈 6-Month Trend</div>
+        <MiniLineChart data={trend} labels={months.map(monthLabel)} color={b.color} max={100} />
       </div>
     </div>
   );

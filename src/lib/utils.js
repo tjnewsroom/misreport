@@ -1,4 +1,4 @@
-import { NEWS_TYPES, QUALITY_ITEMS, PROD_FIELDS, VO_FIELDS, REL_ITEMS } from '../data/constants';
+﻿import { NEWS_TYPES, QUALITY_ITEMS, PROD_FIELDS, VO_FIELDS, REL_ITEMS } from '../data/constants';
 
 export const todayStr = () => new Date().toISOString().slice(0, 10);
 export const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -79,3 +79,32 @@ export const getLocation = () => new Promise(resolve => {
     { timeout:8000, enableHighAccuracy:true }
   );
 });
+
+// Returns the last `n` month keys (YYYY-MM) ending at the current month, oldest first.
+// Used by the performance trend chart and monthly dashboards.
+export const lastNMonths = (n) => {
+  const out = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  return out;
+};
+
+export const monthLabel = (monthKey) => {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y, m-1, 1).toLocaleDateString('en-IN', { month:'short' });
+};
+
+// Elapsed time since a HH:MM "in_time" today, formatted like "2h 14m"
+export const elapsedSince = (hhmm) => {
+  if (!hhmm) return '—';
+  const [h, m] = hhmm.split(':').map(Number);
+  const start = new Date();
+  start.setHours(h, m, 0, 0);
+  let diffMin = Math.round((Date.now() - start.getTime()) / 60000);
+  if (diffMin < 0) diffMin += 1440; // crossed midnight
+  const hh = Math.floor(diffMin/60), mm = diffMin%60;
+  return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
+};

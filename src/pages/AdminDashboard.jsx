@@ -9,6 +9,7 @@ import HistoryTab from '../components/HistoryTab';
 import { Overview, TodayWork, AttendancePage } from '../components/AdminPages1';
 import { ShiftPlanner, StaffManagement, ShiftRequests } from '../components/AdminPages2';
 import { QualityPage, ReliabilityPage, ProducersPage, TaskSearchPage, ReportPage } from '../components/AdminPages3';
+import { LiveNow, EmployeeMonthlyPage, NewsTypeMonthlyPage } from '../components/AdminPages4';
 
 const buildNavSections = (hasEmpRecord) => {
   const sections = [];
@@ -22,6 +23,7 @@ const buildNavSections = (hasEmpRecord) => {
   }
   sections.push({ label:'Analytics', items:[
     { id:'overview', label:'Overview',    icon:'📊' },
+    { id:'live',     label:'Live Now',    icon:'🟢' },
     { id:'today',    label:"Today's Work",icon:'🗒' },
     { id:'att',      label:'Attendance',  icon:'🕒' },
   ]});
@@ -34,8 +36,10 @@ const buildNavSections = (hasEmpRecord) => {
     { id:'prod',     label:'Producers/VO',   icon:'🎙' },
   ]});
   sections.push({ label:'Reports', items:[
-    { id:'search', label:'Task Search', icon:'🔍' },
-    { id:'report', label:'Full Report', icon:'📄' },
+    { id:'search',     label:'Task Search',         icon:'🔍' },
+    { id:'report',     label:'Full Report',         icon:'📄' },
+    { id:'empmonth',   label:'Employee Monthly',    icon:'📆' },
+    { id:'typemonth',  label:'News Type Monthly',   icon:'🗞' },
   ]});
   return sections;
 };
@@ -43,6 +47,7 @@ const buildNavSections = (hasEmpRecord) => {
 // Flat list for mobile bottom nav
 const MOB_TABS = [
   { id:'overview',  label:'Overview',  icon:'📊' },
+  { id:'live',      label:'Live',      icon:'🟢' },
   { id:'today',     label:'Today',     icon:'🗒' },
   { id:'shifts',    label:'Shifts',    icon:'📅' },
   { id:'shiftreq',  label:'Shift Req', icon:'🔄' },
@@ -165,6 +170,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
         {hasEmpRecord && empId && activeTab==='score'   && <ScoreTab empId={empId} dept={dept} selDate={selDate}/>}
         {hasEmpRecord && empId && activeTab==='history' && <HistoryTab empId={empId} dept={dept} selDate={selDate} onDateChange={setSelDate} onGoToDaily={()=>setActiveTab('daily')}/>}
         {activeTab==='overview'  && <Overview selDate={selDate}/>}
+        {activeTab==='live'      && <LiveNow/>}
         {activeTab==='today'     && <TodayWork selDate={selDate}/>}
         {activeTab==='att'       && <AttendancePage selDate={selDate}/>}
         {activeTab==='shifts'    && <ShiftPlanner selDate={selDate}/>}
@@ -175,6 +181,8 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
         {activeTab==='prod'      && <ProducersPage selDate={selDate}/>}
         {activeTab==='search'    && <TaskSearchPage/>}
         {activeTab==='report'    && <ReportPage selDate={selDate}/>}
+        {activeTab==='empmonth'  && <EmployeeMonthlyPage/>}
+        {activeTab==='typemonth' && <NewsTypeMonthlyPage/>}
       </main>
 
       {/* ── Mobile Bottom Nav ── */}

@@ -559,6 +559,30 @@ export function ReportPage({ selDate }) {
   const prodEmps = state.emps.filter(e=>e.is_active&&e.dept==='News Producer');
   const voEmps   = state.emps.filter(e=>e.is_active&&e.dept==='Voice Over');
 
+  // Team totals for tables
+  const nleTypeTotals = activeNLETypes.map(nt => nleEmps.reduce((s, emp) => {
+    const allItems = dates.flatMap(d => state.daily[emp.id]?.[d] || []);
+    return s + allItems.filter(it => it.type === nt.key).length;
+  }, 0));
+  const nleTotalItems = nleTypeTotals.reduce((s, v) => s + v, 0);
+  const nleTotalWpts = nleEmps.reduce((s, emp) => {
+    const allItems = dates.flatMap(d => state.daily[emp.id]?.[d] || []);
+    return s + allItems.reduce((ss, it) => ss + (NEWS_TYPES.find(n => n.key === it.type)?.weight || 0), 0);
+  }, 0);
+  const nleTotalMins = nleEmps.reduce((s, emp) => {
+    const allItems = dates.flatMap(d => state.daily[emp.id]?.[d] || []);
+    return s + allItems.reduce((ss, it) => ss + (tdiff(it.startTime, it.endTime) ?? it.manualMins ?? 0), 0);
+  }, 0);
+  const nleAvgScore = nleEmps.length ? Math.round(nleEmps.reduce((s, emp) => s + calcScore(emp.id, emp.dept, dates[dates.length-1].slice(0,7), state.daily, state.prodDaily, state.quality, state.reliability).final, 0) / nleEmps.length) : 0;
+
+  const prodFieldTotals = PROD_FIELDS.map(f => prodEmps.reduce((s, emp) => s + dates.reduce((ss, d) => ss + (parseInt(state.prodDaily[emp.id]?.[d]?.[f.key]) || 0), 0), 0));
+  const prodTotalPresent = prodEmps.reduce((s, emp) => s + dates.filter(d => state.attendance[emp.id]?.[d]?.in_time).length, 0);
+  const prodAvgScore = prodEmps.length ? Math.round(prodEmps.reduce((s, emp) => s + calcScore(emp.id, emp.dept, dates[dates.length-1].slice(0,7), state.daily, state.prodDaily, state.quality, state.reliability).final, 0) / prodEmps.length) : 0;
+
+  const voFieldTotals = VO_FIELDS.map(f => voEmps.reduce((s, emp) => s + dates.reduce((ss, d) => ss + (parseInt(state.prodDaily[emp.id]?.[d]?.[f.key]) || 0), 0), 0));
+  const voTotalPresent = voEmps.reduce((s, emp) => s + dates.filter(d => state.attendance[emp.id]?.[d]?.in_time).length, 0);
+  const voAvgScore = voEmps.length ? Math.round(voEmps.reduce((s, emp) => s + calcScore(emp.id, emp.dept, dates[dates.length-1].slice(0,7), state.daily, state.prodDaily, state.quality, state.reliability).final, 0) / voEmps.length) : 0;
+
   const Th = ({children, center, color}) => (
     <th style={{padding:'9px 10px',textAlign:center?'center':'left',color:color||'var(--mt)',fontWeight:700,
       fontSize:'.72rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:50}}>
@@ -775,6 +799,20 @@ export function ReportPage({ selDate }) {
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr style={{background:'var(--surf2)'}}>
+                    <td style={{...tdBase,color:'var(--mt)',textAlign:'center'}}></td>
+                    <td style={{...tdBase,fontWeight:700,color:'var(--txt)'}}>Team Total</td>
+                    <td style={{...tdBase}}></td>
+                    {nleTypeTotals.map((v,i)=> (
+                      <td key={i} style={{...tdBase,textAlign:'center',fontWeight:700,color:activeNLETypes[i].color,fontFamily:"'JetBrains Mono'"}}>{v>0?v:'—'}</td>
+                    ))}
+                    <td style={{...tdBase,textAlign:'center',fontWeight:800,color:'var(--blue)',fontFamily:"'JetBrains Mono'"}}>{nleTotalItems||'—'}</td>
+                    <td style={{...tdBase,textAlign:'center',fontWeight:800,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{nleTotalWpts||'—'}</td>
+                    <td style={{...tdBase,textAlign:'center',fontWeight:700,color:'var(--green)',fontFamily:"'JetBrains Mono'",fontSize:'.78rem'}}>{nleTotalMins>0?fmtMin(nleTotalMins):'—'}</td>
+                    <td style={{...tdBase,textAlign:'center',fontWeight:800,color:nleAvgScore>=80?'var(--green)':nleAvgScore>=60?'var(--amber)':'var(--red)',fontFamily:"'JetBrains Mono'"}}>{nleAvgScore}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}
@@ -833,6 +871,18 @@ export function ReportPage({ selDate }) {
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr style={{background:'var(--surf2)'}}>
+                    <td style={{...tdBase,color:'var(--mt)',textAlign:'center'}}></td>
+                    <td style={{...tdBase,fontWeight:700,color:'var(--txt)'}}>Team Total</td>
+                    <td style={{...tdBase}}></td>
+                    {prodFieldTotals.map((v,i)=> (
+                      <td key={i} style={{...tdBase,textAlign:'center',fontWeight:700,color:PROD_FIELDS[i].color,fontFamily:"'JetBrains Mono'"}}>{v>0?v:'—'}</td>
+                    ))}
+                    <td style={{...tdBase,textAlign:'center',fontWeight:700,color:prodTotalPresent>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{prodTotalPresent}/{prodEmps.length * dates.length}</td>
+                    <td style={{...tdBase,textAlign:'center',fontWeight:800,color:prodAvgScore>=80?'var(--green)':prodAvgScore>=60?'var(--amber)':'var(--red)',fontFamily:"'JetBrains Mono'"}}>{prodAvgScore}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -891,6 +941,18 @@ export function ReportPage({ selDate }) {
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr style={{background:'var(--surf2)'}}>
+                    <td style={{...tdBase,color:'var(--mt)',textAlign:'center'}}></td>
+                    <td style={{...tdBase,fontWeight:700,color:'var(--txt)'}}>Team Total</td>
+                    <td style={{...tdBase}}></td>
+                    {voFieldTotals.map((v,i)=> (
+                      <td key={i} style={{...tdBase,textAlign:'center',fontWeight:700,color:VO_FIELDS[i].color,fontFamily:"'JetBrains Mono'"}}>{v>0?v:'—'}</td>
+                    ))}
+                    <td style={{...tdBase,textAlign:'center',fontWeight:700,color:voTotalPresent>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{voTotalPresent}/{voEmps.length * dates.length}</td>
+                    <td style={{...tdBase,textAlign:'center',fontWeight:800,color:voAvgScore>=80?'var(--green)':voAvgScore>=60?'var(--amber)':'var(--red)',fontFamily:"'JetBrains Mono'"}}>{voAvgScore}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

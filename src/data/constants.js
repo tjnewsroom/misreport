@@ -8,7 +8,7 @@ export const NEWS_TYPES = [
   {key:"justin",   label:"Just In",              color:"#dc2626", weight:2,  icon:"📢"},
   {key:"One_Minute",label:"One Minute",          color:"#64748b", weight:10, icon:"1️⃣"},
   {key:"package",  label:"Package/Story",        color:"#0891b2", weight:25, icon:"🎦"},
-  {key:"package_freeze",label:"Package-Freeze",  color:"#0891b2", weight:15, icon:"📺"},
+  {key:"package_freeze",label:"Package-Freeze",  color:"#0891b2", weight:7, icon:"📺"},
   {key:"programseg01",label:"Program Segment 01",color:"#d97706", weight:40, icon:"🎬"},
   {key:"programseg02",label:"Program Segment 02",color:"#d97706", weight:40, icon:"🎬"},
   {key:"prog_promo",label:"Program Promo",       color:"#7c3aed", weight:30, icon:"📣"},

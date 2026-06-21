@@ -211,19 +211,21 @@ export function TodayWork({ selDate }) {
                     <div style={{width:36,height:36,borderRadius:9,background:`${dc}18`,color:dc,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{e.name[0]}</div>
                     <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{e.name}</div><div style={{fontSize:10,color:'var(--mt)',fontFamily:"'JetBrains Mono'"}}>{e.id}</div></div>
                     <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',justifyContent:'flex-end'}}>
-                      {items.length>0 && dept==='NLE Editor' ? (
-                        <>
-                          <div><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{items.length}</div><div style={{fontSize:9,color:'var(--mt)'}}>ITEMS</div></div>
-                          <div><div style={{fontSize:16,fontWeight:800,color:'var(--green)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(mins)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TIME</div></div>
-                          <div><div style={{fontSize:16,fontWeight:800,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{wpts}</div><div style={{fontSize:9,color:'var(--mt)'}}>PTS</div></div>
-                          {totalGap>0&&<div><div style={{fontSize:16,fontWeight:800,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(totalGap)}</div><div style={{fontSize:9,color:'var(--mt)'}}>GAP</div></div>}
-                        </>
-                      ) : isProdVO && hasProdData ? (
-                        <>
-                          <div><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{prodFields.reduce((s,f)=>s+(parseInt(pd[f.key])||0),0)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TOTAL</div></div>
-                          {state.attendance[e.id]?.[selDate]?.in_time && <div><div style={{fontSize:16,fontWeight:800,color:'var(--green)'}}>✓</div><div style={{fontSize:9,color:'var(--mt)'}}>PRESENT</div></div>}
-                        </>
-                      ) : <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic'}}>No entry</div>}
+                      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',justifyContent:'flex-end',minWidth:0}}>
+                        {items.length>0 && dept==='NLE Editor' ? (
+                          <>
+                            <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{items.length}</div><div style={{fontSize:9,color:'var(--mt)'}}>ITEMS</div></div>
+                            <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--green)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(mins)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TIME</div></div>
+                            <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{wpts}</div><div style={{fontSize:9,color:'var(--mt)'}}>PTS</div></div>
+                            {totalGap>0&&<div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(totalGap)}</div><div style={{fontSize:9,color:'var(--mt)'}}>GAP</div></div>}
+                          </>
+                        ) : isProdVO && hasProdData ? (
+                          <>
+                            <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{prodFields.reduce((s,f)=>s+(parseInt(pd[f.key])||0),0)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TOTAL</div></div>
+                            {state.attendance[e.id]?.[selDate]?.in_time && <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--green)'}}>✓</div><div style={{fontSize:9,color:'var(--mt)'}}>PRESENT</div></div>}
+                          </>
+                        ) : <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic'}}>No entry</div>}
+                      </div>
                       <button onClick={()=>setOpenRows(prev=>({...prev,[e.id]:!prev[e.id]}))} style={{border:'1px solid var(--brd)',background:'transparent',borderRadius:999,padding:'6px 12px',fontSize:11,color:'var(--txt)',cursor:'pointer',whiteSpace:'nowrap'}}>{isOpen ? 'Close' : 'Open'}</button>
                     </div>
                   </div>

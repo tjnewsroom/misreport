@@ -166,6 +166,7 @@ export function Overview({ selDate }) {
 export function TodayWork({ selDate }) {
   const { state } = useApp();
   const [search, setSearch] = useState('');
+  const [openRows, setOpenRows] = useState({});
   const allE = state.emps.filter(e=>e.is_active);
   const term = search.toLowerCase().trim();
 
@@ -203,12 +204,13 @@ export function TodayWork({ selDate }) {
               const prodFields = isProdVO ? (dept==='News Producer'?PROD_FIELDS:VO_FIELDS) : [];
               const hasProdData = prodFields.some(f=>parseInt(pd[f.key])>0);
               const hasAnyData = items.length>0 || hasProdData;
+              const isOpen = !!openRows[e.id];
               return (
                 <div key={e.id} className="card" style={{marginBottom:10,borderLeft:`3px solid ${hasAnyData?dc:'var(--brd)'}`}}>
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:hasAnyData?12:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:isOpen?12:0,flexWrap:'wrap'}}>
                     <div style={{width:36,height:36,borderRadius:9,background:`${dc}18`,color:dc,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{e.name[0]}</div>
-                    <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{e.name}</div><div style={{fontSize:10,color:'var(--mt)',fontFamily:"'JetBrains Mono'"}}>{e.id}</div></div>
-                    <div style={{display:'flex',gap:12,textAlign:'center'}}>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{e.name}</div><div style={{fontSize:10,color:'var(--mt)',fontFamily:"'JetBrains Mono'"}}>{e.id}</div></div>
+                    <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',justifyContent:'flex-end'}}>
                       {items.length>0 && dept==='NLE Editor' ? (
                         <>
                           <div><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{items.length}</div><div style={{fontSize:9,color:'var(--mt)'}}>ITEMS</div></div>
@@ -222,9 +224,11 @@ export function TodayWork({ selDate }) {
                           {state.attendance[e.id]?.[selDate]?.in_time && <div><div style={{fontSize:16,fontWeight:800,color:'var(--green)'}}>✓</div><div style={{fontSize:9,color:'var(--mt)'}}>PRESENT</div></div>}
                         </>
                       ) : <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic'}}>No entry</div>}
+                      <button onClick={()=>setOpenRows(prev=>({...prev,[e.id]:!prev[e.id]}))} style={{border:'1px solid var(--brd)',background:'transparent',borderRadius:999,padding:'6px 12px',fontSize:11,color:'var(--txt)',cursor:'pointer',whiteSpace:'nowrap'}}>{isOpen ? 'Close' : 'Open'}</button>
                     </div>
                   </div>
-                  {items.length>0 && dept==='NLE Editor' && (
+                  {!isOpen && hasAnyData && <div style={{fontSize:12,color:'var(--mt)',marginTop:-6,marginBottom:8}}>Details are hidden. Click open to view full work summary.</div>}
+                  {isOpen && items.length>0 && dept==='NLE Editor' && (
                     <div style={{overflowX:'auto'}}>
                       <table className="tbl" style={{fontSize:12}}>
                         <thead><tr><th>#</th><th>Type</th><th>IN→OUT</th><th>Time</th><th>Pts</th><th>Description</th></tr></thead>
@@ -245,7 +249,7 @@ export function TodayWork({ selDate }) {
                       </table>
                     </div>
                   )}
-                  {(dept==='News Producer'||dept==='Voice Over') && (() => {
+                  {isOpen && (dept==='News Producer'||dept==='Voice Over') && (() => {
                     const fields = dept==='News Producer' ? PROD_FIELDS : VO_FIELDS;
                     const hasData = fields.some(f => parseInt(pd[f.key]) > 0);
                     if (!hasData) return <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic',marginTop:4}}>No entry yet</div>;

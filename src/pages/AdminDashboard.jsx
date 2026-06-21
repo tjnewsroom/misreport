@@ -170,7 +170,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
         {hasEmpRecord && empId && activeTab==='score'   && <ScoreTab empId={empId} dept={dept} selDate={selDate}/>}
         {hasEmpRecord && empId && activeTab==='history' && <HistoryTab empId={empId} dept={dept} selDate={selDate} onDateChange={setSelDate} onGoToDaily={()=>setActiveTab('daily')}/>}
         {activeTab==='overview'  && <Overview selDate={selDate}/>}
-        {activeTab==='live'      && <LiveNow/>}
+        {activeTab==='live'      && <LiveNow selDate={selDate}/>}
         {activeTab==='today'     && <TodayWork selDate={selDate}/>}
         {activeTab==='att'       && <AttendancePage selDate={selDate}/>}
         {activeTab==='shifts'    && <ShiftPlanner selDate={selDate}/>}

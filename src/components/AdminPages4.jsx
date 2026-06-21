@@ -7,7 +7,7 @@ import MiniBarChart from './MiniBarChart';
 const deptColors = { 'NLE Editor':'var(--blue)', 'News Producer':'var(--green)', 'Voice Over':'var(--purple)' };
 
 // ── Live Now — who is currently clocked in, right now ───────────────────────
-export function LiveNow() {
+export function LiveNow({ selDate }) {
   const { state } = useApp();
   const [, setTick] = useState(0);
   // Re-render every 30s so elapsed times stay current without a full data refetch.
@@ -16,7 +16,7 @@ export function LiveNow() {
     return () => clearInterval(id);
   }, []);
 
-  const today = todayStr();
+  const today = selDate || todayStr();
   const allE = state.emps.filter(e => e.is_active);
 
   const live = [];

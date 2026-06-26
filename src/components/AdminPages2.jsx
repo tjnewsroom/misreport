@@ -370,13 +370,11 @@ export function ShiftRequests() {
   const toast = useToast();
   const [reqs, setReqs] = useState(null);
   const [filter, setFilter] = useState('');
-  const [pendingCount, setPendingCount] = useState(0);
+  const [activeTab, setActiveTab] = useState('pending');
 
   const load = async () => {
     const{data}=await sb.from('shift_change_requests').select('*').order('submitted_at',{ascending:false});
-    const all=data||[];
-    setReqs(all);
-    setPendingCount(all.filter(r=>r.status==='pending').length);
+    setReqs(data||[]);
   };
 
   if(reqs===null && state.emps.length>0) load();
@@ -385,10 +383,14 @@ export function ShiftRequests() {
     const{error:e1}=await sb.from('shift_change_requests').update({status:action,reviewed_at:new Date().toISOString()}).eq('id',req.id);
     if(e1){toast('Update failed: '+e1.message,'er');return;}
     if(action==='approved'){
-      const rows=[];const cur=new Date(req.start_date+'T00:00');const end=new Date(req.end_date+'T00:00');
+      const rows=[];
+      const requestedCodeMap = { OFF:'OFFREQUESTED', '1ST':'1STSHIFTREQUESTED', '2ND':'2NDSHIFTREQUESTED' };
+      const shiftCode = requestedCodeMap[req.requested_shift] || req.requested_shift;
+      const cur=new Date(req.start_date+'T00:00');
+      const end=new Date(req.end_date+'T00:00');
       while(cur<=end){
         const localDate=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
-        rows.push({employee_id:req.employee_id,shift_date:localDate,shift_code:req.requested_shift,remarks:'Shift change approved'});
+        rows.push({employee_id:req.employee_id,shift_date:localDate,shift_code:shiftCode,remarks:'Shift change approved'});
         cur.setDate(cur.getDate()+1);
       }
       for(let i=0;i<rows.length;i+=50){
@@ -401,54 +403,120 @@ export function ShiftRequests() {
       toast('❌ Rejected');
     }
     setReqs(prev=>prev.map(r=>r.id===req.id?{...r,status:action}:r));
-    setPendingCount(prev=>Math.max(0,prev-1));
   };
 
-  const pending = (reqs||[]).filter(r=>r.status==='pending');
-  const filtered = filter ? pending.filter(r=>(r.employee_name||'').toLowerCase().includes(filter.toLowerCase())) : pending;
   const shiftLbl={"1ST":"🌅 1st Shift","2ND":"🌙 2nd Shift","OFF":"🏖️ Off"};
   const shiftCls={"1ST":"sc1","2ND":"sc2","OFF":"scoff"};
+
+  const all = reqs || [];
+  const counts = { pending: all.filter(r=>r.status==='pending').length, approved: all.filter(r=>r.status==='approved').length, rejected: all.filter(r=>r.status==='rejected').length };
+  const tabList = [
+    { key:'pending',  label:'Pending',  color:'var(--amber)', bg:'var(--al)',  pill:'pending'  },
+    { key:'approved', label:'Approved', color:'var(--green)', bg:'var(--gl)',  pill:'approved' },
+    { key:'rejected', label:'Rejected', color:'var(--red)',   bg:'var(--rl)',  pill:'rejected' },
+  ];
+
+  const tabReqs = all
+    .filter(r => r.status === activeTab)
+    .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+  const filtered = filter ? tabReqs.filter(r=>(r.employee_name||'').toLowerCase().includes(filter.toLowerCase())) : tabReqs;
+
+  const tabEmptyMsg = { pending:'✅ All caught up! No pending requests.', approved:'No approved requests yet.', rejected:'No rejected requests.' };
 
   return (
     <div>
       <div className="sec-hdr">
         <div><div className="sec-title">Shift Change Requests</div><div className="sec-sub">Review and approve requests</div></div>
       </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:8,marginBottom:16,borderBottom:'2px solid var(--brd)',paddingBottom:0}}>
+        {tabList.map(t=>{
+          const isActive = activeTab===t.key;
+          return (
+            <button key={t.key} onClick={()=>{setActiveTab(t.key);setFilter('');}}
+              style={{
+                display:'flex',alignItems:'center',gap:6,padding:'9px 16px',
+                border:'none',borderBottom:`2px solid ${isActive?t.color:'transparent'}`,
+                background:'transparent',cursor:'pointer',fontFamily:'Inter',
+                fontSize:13,fontWeight:isActive?700:500,
+                color:isActive?t.color:'var(--mt)',
+                marginBottom:-2,transition:'all .15s',borderRadius:'6px 6px 0 0',
+              }}>
+              {t.label}
+              {counts[t.key]>0 && (
+                <span style={{
+                  background:isActive?t.color:'var(--brd2)',color:isActive?'#fff':'var(--mt)',
+                  borderRadius:100,fontSize:11,fontWeight:700,
+                  padding:'0px 7px',minWidth:20,textAlign:'center',lineHeight:'18px',display:'inline-block',
+                }}>
+                  {counts[t.key]}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {reqs===null ? (
         <div className="card" style={{textAlign:'center',padding:40,color:'var(--mt)'}}>Loading...</div>
-      ) : !pending.length ? (
-        <div className="card" style={{textAlign:'center',padding:40,color:'var(--mt)'}}><div style={{fontSize:36,marginBottom:8}}>✅</div><div style={{fontWeight:600}}>All caught up!</div></div>
       ) : (
         <>
-          <div className="card" style={{background:'var(--al)',borderColor:'rgba(217,119,6,.3)',marginBottom:16}}>
-            <div style={{fontWeight:700,color:'var(--amber)',marginBottom:10}}>🔔 {pendingCount} pending request{pendingCount>1?'s':''} awaiting approval</div>
-            <input className="inp" placeholder="🔍 Filter by employee name…" style={{fontSize:12}} value={filter} onChange={e=>setFilter(e.target.value)} />
-          </div>
-          {filtered.map(req=>{
-            const dateRange=req.start_date===req.end_date?scrFmtD(req.start_date):`${scrFmtD(req.start_date)} → ${scrFmtD(req.end_date)}`;
-            return (
-              <div key={req.id} className="scr-req-card">
-                <div className="scr-req-hdr">
-                  <div className="scr-req-name">{req.employee_name}</div>
-                  <div className={`scr-req-pill ${req.status}`}>{req.status.toUpperCase()}</div>
-                </div>
-                <div className="scr-req-rows">
-                  {[['Dept',req.dept],['Date(s)',dateRange],['Shift',<span className={`scr-sbdg ${shiftCls[req.requested_shift]||''}`}>{shiftLbl[req.requested_shift]||req.requested_shift}</span>],...(req.reason?[['Reason',req.reason]]:[])]
-                    .map(([l,v])=><div key={l} className="scr-req-row"><span className="rl">{l}</span><span className="rv">{v}</span></div>)}
-                </div>
-                {req.status==='pending' ? (
-                  <div className="scr-req-acts">
-                    <button className="scr-req-btn appr" onClick={()=>adminAction(req,'approved')}>✅ Approve</button>
-                    <button className="scr-req-btn rejt" onClick={()=>adminAction(req,'rejected')}>❌ Reject</button>
+          {/* Filter bar — shown only when there are items */}
+          {tabReqs.length>0 && (
+            <div className="card" style={{
+              background: activeTab==='pending'?'var(--al)':activeTab==='approved'?'var(--gl)':'var(--rl)',
+              borderColor: activeTab==='pending'?'rgba(201,125,14,.3)':activeTab==='approved'?'rgba(15,155,110,.3)':'rgba(212,50,40,.3)',
+              marginBottom:16,
+            }}>
+              {activeTab==='pending' && counts.pending>0 && (
+                <div style={{fontWeight:700,color:'var(--amber)',marginBottom:10}}>🔔 {counts.pending} pending request{counts.pending>1?'s':''} awaiting approval</div>
+              )}
+              {activeTab==='approved' && (
+                <div style={{fontWeight:700,color:'var(--green)',marginBottom:10}}>✅ {counts.approved} approved request{counts.approved>1?'s':''}</div>
+              )}
+              {activeTab==='rejected' && (
+                <div style={{fontWeight:700,color:'var(--red)',marginBottom:10}}>❌ {counts.rejected} rejected request{counts.rejected>1?'s':''}</div>
+              )}
+              <input className="inp" placeholder="🔍 Filter by employee name…" style={{fontSize:12}} value={filter} onChange={e=>setFilter(e.target.value)} />
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!tabReqs.length ? (
+            <div className="card" style={{textAlign:'center',padding:40,color:'var(--mt)'}}>
+              <div style={{fontSize:32,marginBottom:8}}>{activeTab==='pending'?'✅':activeTab==='approved'?'📋':'🚫'}</div>
+              <div style={{fontWeight:600}}>{tabEmptyMsg[activeTab]}</div>
+            </div>
+          ) : filtered.length===0 ? (
+            <div className="card" style={{textAlign:'center',padding:24,color:'var(--mt)'}}>No results for "{filter}"</div>
+          ) : (
+            filtered.map(req=>{
+              const dateRange=req.start_date===req.end_date?scrFmtD(req.start_date):`${scrFmtD(req.start_date)} → ${scrFmtD(req.end_date)}`;
+              return (
+                <div key={req.id} className="scr-req-card">
+                  <div className="scr-req-hdr">
+                    <div className="scr-req-name">{req.employee_name}</div>
+                    <div className={`scr-req-pill ${req.status}`}>{req.status.toUpperCase()}</div>
                   </div>
-                ) : (
-                  <div className={`scr-req-note ${req.status==='rejected'?'rejt':''}`}>
-                    {req.status==='approved'?`✅ Schedule updated to ${shiftLbl[req.requested_shift]||req.requested_shift}`:'❌ Rejected — original schedule kept'}
+                  <div className="scr-req-rows">
+                    {[['Dept',req.dept],['Date(s)',dateRange],['Shift',<span className={`scr-sbdg ${shiftCls[req.requested_shift]||''}`}>{shiftLbl[req.requested_shift]||req.requested_shift}</span>],...(req.reason?[['Reason',req.reason]]:[]),...(req.reviewed_at&&req.status!=='pending'?[['Reviewed',scrFmtD(req.reviewed_at.slice(0,10))]]:[])]
+                      .map(([l,v])=><div key={l} className="scr-req-row"><span className="rl">{l}</span><span className="rv">{v}</span></div>)}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                  {req.status==='pending' ? (
+                    <div className="scr-req-acts">
+                      <button className="scr-req-btn appr" onClick={()=>adminAction(req,'approved')}>✅ Approve</button>
+                      <button className="scr-req-btn rejt" onClick={()=>adminAction(req,'rejected')}>❌ Reject</button>
+                    </div>
+                  ) : (
+                    <div className={`scr-req-note ${req.status==='rejected'?'rejt':''}`}>
+                      {req.status==='approved'?`✅ Schedule updated to ${shiftLbl[req.requested_shift]||req.requested_shift}`:'❌ Rejected — original schedule kept'}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </>
       )}
     </div>

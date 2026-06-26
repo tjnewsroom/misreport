@@ -20,9 +20,9 @@ export default function HistoryTab({ empId, dept, onDateChange, onGoToDaily }) {
     sb.from('shift_change_requests')
       .select('*')
       .eq('employee_id', empId)
-      .in('status', ['approved', 'rejected'])
+      .in('status', ['pending', 'approved', 'rejected'])
       .gte('end_date', today)
-      .order('start_date', { ascending: true })
+      .order('submitted_at', { ascending: false })
       .then(({ data }) => setRequests(data || []));
   }, [empId]);
 

@@ -153,7 +153,7 @@ export default function ShiftChatbot({ me, isVisible }) {
           <div className="scr-head">
             <div className="scr-head-ico">🔄</div>
             <div style={{flex:1}}>
-              <div className="scr-head-title">Shift Change Request</div>
+              <div className="scr-head-title">Shift and Week_Off Change Request</div>
               <div className="scr-head-sub">TAMILJANAM Newsroom Scheduler</div>
             </div>
             <button className="scr-head-close" onClick={()=>setOpen(false)}>✕</button>

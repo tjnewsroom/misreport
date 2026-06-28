@@ -62,7 +62,7 @@ export function ShiftPlanner() {
       el.style.width    = el.scrollWidth  + 'px';
       el.style.height   = el.scrollHeight + 'px';
       const canvas = await html2canvas(el, {
-        scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
+        scale: 4, backgroundColor: '#ffffff', useCORS: true, logging: false,
         scrollX: 0, scrollY: 0,
         windowWidth:  el.scrollWidth,
         windowHeight: el.scrollHeight,

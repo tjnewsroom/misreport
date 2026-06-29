@@ -52,36 +52,177 @@ export function ShiftPlanner() {
     setPending(null); setMoOpen(false);
   };
 
-  const captureShift = async () => {
-    const el = tableRef.current; if(!el)return;
-    toast('Generating...');
-    try {
-      // Expand to full scroll size before capture so mobile gets the full week
-      const prevStyle = { overflow: el.style.overflow, width: el.style.width, height: el.style.height };
-      el.style.overflow = 'visible';
-      el.style.width    = el.scrollWidth  + 'px';
-      el.style.height   = el.scrollHeight + 'px';
-      const canvas = await html2canvas(el, {
-        scale: 4, backgroundColor: '#ffffff', useCORS: true, logging: false,
-        scrollX: 0, scrollY: 0,
-        windowWidth:  el.scrollWidth,
-        windowHeight: el.scrollHeight,
+const captureShift = async () => {
+  toast('Generating...');
+  try {
+    // ── 1. Build a snapshot div (no <select>, no scroll clipping) ──
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `
+      position:fixed; left:-9999px; top:0;
+      font-family:Inter,sans-serif; background:#ffffff;
+      padding:20px; width:max-content; min-width:800px;
+    `;
+
+    // Title
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:16px;font-weight:700;color:#1e293b;margin-bottom:4px;';
+    title.textContent = 'TamilJanam – Shift Plan';
+    wrap.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:14px;';
+    sub.textContent = `${fmtShort(days[0])} — ${fmtShort(days[6])}`;
+    wrap.appendChild(sub);
+
+    // Table
+    const tbl = document.createElement('table');
+    tbl.style.cssText = 'border-collapse:collapse;width:100%;';
+
+    // Shift label map for display
+    const SH_LBL = {};
+    SHIFT_OPTS.forEach(o => { SH_LBL[o.v] = o.lbl; });
+
+    // Shift cell colours (bg, text)
+    const SH_COLOR = {
+      '1ST':          { bg:'#dbeafe', color:'#1d4ed8' },
+      '2ND':          { bg:'#ede9fe', color:'#6d28d9' },
+      'NIGHT':        { bg:'#0f172a', color:'#e2e8f0' },
+      'GEN':          { bg:'#d1fae5', color:'#065f46' },
+      'MN':           { bg:'#ccfbf1', color:'#0f766e' },
+      'OFF':          { bg:'#fee2e2', color:'#b91c1c' },
+      'CL':           { bg:'#fef9c3', color:'#854d0e' },
+      'SL':           { bg:'#fef9c3', color:'#854d0e' },
+      'PL':           { bg:'#fef9c3', color:'#854d0e' },
+      'LOP':          { bg:'#fecaca', color:'#991b1b' },
+      'COMP_HOL':     { bg:'#e0e7ff', color:'#3730a3' },
+      'COMP_WEEK':    { bg:'#e0e7ff', color:'#3730a3' },
+      '1STSHIFTREQUESTED':  { bg:'#bfdbfe', color:'#1e40af' },
+      '2NDSHIFTREQUESTED':  { bg:'#ddd6fe', color:'#5b21b6' },
+      'OFFREQUESTED':       { bg:'#fde8e8', color:'#9b1c1c' },
+    };
+
+    const cell = (txt, style='', isHdr=false) => {
+      const td = document.createElement(isHdr ? 'th' : 'td');
+      td.style.cssText = `border:1px solid #e2e8f0;padding:6px 8px;font-size:11px;white-space:nowrap;${style}`;
+      td.innerHTML = txt;
+      return td;
+    };
+
+    // Header row
+    const thead = tbl.createTHead();
+    const hrow = thead.insertRow();
+    hrow.appendChild(cell('#',  'background:#f8fafc;color:#64748b;font-weight:700;width:28px;text-align:center;', true));
+    hrow.appendChild(cell('NAME','background:#f8fafc;color:#64748b;font-weight:700;min-width:130px;', true));
+    const dn = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    days.forEach((d, i) => {
+      const ds = fmtISO(d);
+      const isT = ds === today;
+      hrow.appendChild(cell(
+        `<div style="font-weight:700;font-size:10px">${dn[i]}</div><div style="font-size:10px;font-weight:400">${fmtShort(d)}</div>`,
+        `min-width:90px;text-align:center;background:${isT ? 'rgba(37,99,235,.1)' : '#f8fafc'};color:${isT ? '#2563eb' : '#64748b'};`,
+        true
+      ));
+    });
+
+    // Body
+    const tbody = tbl.createTBody();
+    DEPTS.forEach(dept => {
+      const dc = deptColor(dept);
+      const emps = allE.filter(e => e.dept === dept);
+      if (!emps.length) return;
+
+      // Dept header row
+      const drow = tbody.insertRow();
+      const dhdr = document.createElement('td');
+      dhdr.colSpan = 9;
+      dhdr.style.cssText = `background:${dc}18;color:${dc};font-size:11px;font-weight:700;padding:10px 16px;text-align:center;border:1px solid #e2e8f0;border-top:3px solid ${dc};`;
+      dhdr.textContent = dept.toUpperCase();
+      drow.appendChild(dhdr);
+
+      emps.forEach((e, idx) => {
+        const row = tbody.insertRow();
+        row.appendChild(cell(String(idx + 1), 'text-align:center;color:#94a3b8;'));
+        row.appendChild(cell(
+          `<div style="font-size:11px;font-weight:600;color:${dc}">${e.name}</div><div style="font-size:9px;color:#94a3b8;font-family:monospace">${e.id}</div>`,
+          'min-width:130px;'
+        ));
+        days.forEach(d => {
+          const ds = fmtISO(d);
+          const val = state.shifts[ds]?.[e.id]?.shift || '';
+          const lbl = SH_LBL[val] || (val || '—');
+          const sc = SH_COLOR[val] || { bg:'#f1f5f9', color:'#64748b' };
+          row.appendChild(cell(
+            `<span style="display:inline-block;padding:3px 6px;border-radius:5px;font-size:10px;font-weight:600;background:${sc.bg};color:${sc.color};white-space:nowrap">${lbl}</span>`,
+            'text-align:center;'
+          ));
+        });
       });
-      el.style.overflow = prevStyle.overflow;
-      el.style.width    = prevStyle.width;
-      el.style.height   = prevStyle.height;
-      const fname = `TJ_Shifts_${fmtShort(days[0]).replace(/\//g,'-')}.png`;
-      const blob = await new Promise(r=>canvas.toBlob(r,'image/png'));
-      const file = new File([blob],fname,{type:'image/png'});
-      if(navigator.share&&navigator.canShare?.({files:[file]})){
-        try{await navigator.share({title:'TJ Shift Plan',files:[file]});toast('Shared ✓');}
-        catch(e){if(e.name!=='AbortError'){const a=document.createElement('a');a.download=fname;a.href=canvas.toDataURL('image/png');a.click();}}
-      } else {
-        const a=document.createElement('a');a.download=fname;a.href=canvas.toDataURL('image/png');a.click();
-        toast('Image downloaded ✓');
+    });
+
+    // Summary row
+    const srow = tbody.insertRow();
+    srow.appendChild(cell('SUMMARY', 'font-weight:700;color:#64748b;font-size:10px;', false));
+    srow.appendChild(cell('', '', false));
+    days.forEach(d => {
+      const ds = fmtISO(d);
+      let p = 0, o = 0, l = 0;
+      allE.forEach(e => {
+        const v = state.shifts[ds]?.[e.id]?.shift || '';
+        if (['1ST','2ND','NIGHT','GEN','MN','COMP_HOL','COMP_WEEK'].includes(v)) p++;
+        else if (v === 'OFF') o++;
+        else if (['CL','SL','PL','LOP'].includes(v)) l++;
+      });
+      srow.appendChild(cell(
+        `<div style="color:#16a34a;font-weight:700">P:${p}</div><div style="color:#dc2626">O:${o}</div><div style="color:#d97706">L:${l}</div>`,
+        'text-align:center;font-family:monospace;font-size:10px;background:#f8fafc;'
+      ));
+    });
+
+    wrap.appendChild(tbl);
+    document.body.appendChild(wrap);
+
+    // ── 2. Capture at high scale ──
+    const canvas = await html2canvas(wrap, {
+      scale: 3,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: wrap.scrollWidth,
+      windowHeight: wrap.scrollHeight,
+    });
+
+    document.body.removeChild(wrap);
+
+    // ── 3. Share or download ──
+    const fname = `TJ_Shifts_${fmtShort(days[0]).replace(/\//g, '-')}.png`;
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const file = new File([blob], fname, { type: 'image/png' });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ title: 'TJ Shift Plan', files: [file] });
+        toast('Shared ✓');
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          const a = document.createElement('a');
+          a.download = fname;
+          a.href = canvas.toDataURL('image/png');
+          a.click();
+        }
       }
-    } catch(e){toast('Failed: '+e.message,'er');}
-  };
+    } else {
+      const a = document.createElement('a');
+      a.download = fname;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+      toast('Image downloaded ✓');
+    }
+  } catch (e) {
+    toast('Failed: ' + e.message, 'er');
+  }
+};
 
   const normShift = (raw) => {
     const s=raw.trim().toUpperCase().replace(/\s+/g,' ');

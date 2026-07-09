@@ -34,8 +34,7 @@ export function useData() {
   const loadAll = async () => {
     // ── Employees ──────────────────────────────────────────────
     const { data: ed } = await sb.from('employees').select('*').order('name');
-    const emps = (ed || []).map(e => ({ id: e.emp_code, name: e.name, dept: e.dept, is_active: e.is_active, _uuid: e.id }));
-    dispatch({ type: 'SET_EMPS', payload: emps });
+const emps = (ed || []).map(e => ({ id: e.emp_code, name: e.name, dept: e.dept, is_active: e.is_active, features: e.features || [], _uuid: e.id }));    dispatch({ type: 'SET_EMPS', payload: emps });
     const uuidToCode = {};
     emps.forEach(e => { uuidToCode[e._uuid] = e.id; });
 

@@ -3,6 +3,7 @@ import { useApp } from '../hooks/useApp';
 import { useData } from '../hooks/useData';
 import { useToast } from '../hooks/useToast';
 import { SHIFT_OPTS, SH_CLS, SH_MAP, DEPTS } from '../data/constants';
+import { GRANTABLE_FEATURES, FEATURE_GROUPS } from '../data/features';
 import { fmtISO, fmtShort, gwkStart, addDays, todayStr, deptColor, shortN, scrFmtD } from '../lib/utils';
 import { sb } from '../lib/supabase';
 import html2canvas from 'html2canvas';
@@ -393,12 +394,12 @@ export function StaffManagement() {
 
   const saveEdit = async () => {
     if(!editMo)return;
-    const{uuid,newCode,newName,newDept,oldCode}=editMo;
+    const{uuid,newCode,newName,newDept,oldCode,features}=editMo;
     if(!newCode||!newName)return toast('Code and Name required','er');
     if(newCode!==oldCode&&state.emps.find(e=>e.id===newCode))return toast('Code already in use','er');
-    const{error}=await sb.from('employees').update({emp_code:newCode,name:newName,dept:newDept}).eq('id',uuid);
+    const{error}=await sb.from('employees').update({emp_code:newCode,name:newName,dept:newDept,features:features||[]}).eq('id',uuid);
     if(error)return toast('Update failed: '+error.message,'er');
-    dispatch({type:'UPDATE_EMP',payload:{_uuid:uuid,id:newCode,name:newName,dept:newDept}});
+    dispatch({type:'UPDATE_EMP',payload:{_uuid:uuid,id:newCode,name:newName,dept:newDept,features:features||[]}});
     toast('✓ Employee updated'); setEditMo(null);
   };
 
@@ -446,7 +447,7 @@ export function StaffManagement() {
       )}
       <div className="card" style={{overflowX:'auto'}}>
         <table className="tbl" style={{minWidth:400}}>
-          <thead><tr><th>#</th><th>Name</th><th>Code</th><th>Dept</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
+          <thead><tr><th>#</th><th>Name</th><th>Code</th><th>Dept</th><th style={{textAlign:'center'}}>Access</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
           <tbody>
             {state.emps.map((e,i)=>(
               <tr key={e._uuid} style={{opacity:e.is_active?1:.5}}>
@@ -454,10 +455,15 @@ export function StaffManagement() {
                 <td style={{fontWeight:600}}>{e.name}</td>
                 <td style={{fontFamily:"'JetBrains Mono'",fontSize:11,color:'var(--mt)'}}>{e.id}</td>
                 <td><span className="bdg" style={{background:`${deptColor(e.dept)}18`,color:deptColor(e.dept)}}>{e.dept}</span></td>
+                <td style={{textAlign:'center'}}>
+                  {(e.features?.length||0)>0
+                    ? <span className="bdg" style={{background:'var(--pl,rgba(124,58,237,.12))',color:'var(--purple,#7c3aed)'}} title={(e.features||[]).map(f=>GRANTABLE_FEATURES.find(g=>g.id===f)?.label||f).join(', ')}>🔑 {e.features.length}</span>
+                    : <span style={{fontSize:11,color:'var(--mt)'}}>—</span>}
+                </td>
                 <td style={{textAlign:'center'}}><span style={{background:e.is_active?'var(--gl)':'var(--rl)',color:e.is_active?'var(--green)':'var(--red)',padding:'2px 10px',borderRadius:100,fontSize:11,fontWeight:600}}>{e.is_active?'Active':'Inactive'}</span></td>
                 <td style={{textAlign:'center'}}>
                   <div style={{display:'flex',gap:6,justifyContent:'center'}}>
-                    <button className="btn btn-s btn-sm" onClick={()=>setEditMo({uuid:e._uuid,oldCode:e.id,newCode:e.id,newName:e.name,newDept:e.dept})}>✏️ Edit</button>
+                    <button className="btn btn-s btn-sm" onClick={()=>setEditMo({uuid:e._uuid,oldCode:e.id,newCode:e.id,newName:e.name,newDept:e.dept,features:[...(e.features||[])]})}>✏️ Edit</button>
                     <button className="btn btn-s btn-sm" onClick={()=>toggleActive(e)}>{e.is_active?'Deactivate':'Activate'}</button>
                     <button className="btn btn-d btn-sm" onClick={()=>setDelMo({uuid:e._uuid,name:e.name})}>🗑</button>
                   </div>
@@ -481,6 +487,37 @@ export function StaffManagement() {
               <select className="inp" value={editMo.newDept} onChange={e=>setEditMo(p=>({...p,newDept:e.target.value}))}>
                 {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
               </select>
+            </div>
+            {/* ── Feature Access ── */}
+            <div style={{marginTop:6,marginBottom:12,border:'1px solid var(--brd)',borderRadius:10,padding:'10px 12px',maxHeight:260,overflowY:'auto'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <label className="lbl" style={{margin:0}}>Feature Access ({(editMo.features||[]).length} granted)</label>
+                <div style={{display:'flex',gap:6}}>
+                  <button className="btn btn-s btn-sm" style={{fontSize:10,padding:'2px 8px'}}
+                    onClick={()=>setEditMo(p=>({...p,features:GRANTABLE_FEATURES.map(f=>f.id)}))}>All</button>
+                  <button className="btn btn-s btn-sm" style={{fontSize:10,padding:'2px 8px'}}
+                    onClick={()=>setEditMo(p=>({...p,features:[]}))}>None</button>
+                </div>
+              </div>
+              {FEATURE_GROUPS.map(grp=>(
+                <div key={grp} style={{marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:.8,textTransform:'uppercase',color:'var(--mt)',marginBottom:4}}>{grp}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px 10px'}}>
+                    {GRANTABLE_FEATURES.filter(f=>f.group===grp).map(f=>{
+                      const checked=(editMo.features||[]).includes(f.id);
+                      return (
+                        <label key={f.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer',padding:'3px 4px',borderRadius:6,background:checked?'var(--pl,rgba(124,58,237,.08))':'transparent'}}>
+                          <input type="checkbox" checked={checked}
+                            onChange={ev=>setEditMo(p=>({...p,features:ev.target.checked
+                              ?[...(p.features||[]),f.id]
+                              :(p.features||[]).filter(x=>x!==f.id)}))}/>
+                          <span>{f.icon} {f.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </>}
           <div className="mo-ac">

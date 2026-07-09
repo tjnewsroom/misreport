@@ -7,7 +7,11 @@ import BreaksTab from '../components/BreaksTab';
 import ScoreTab from '../components/ScoreTab';
 import HistoryTab from '../components/HistoryTab';
 import ShiftChatbot from '../components/ShiftChatbot';
-import { TaskSearchPage } from '../components/AdminPages3';
+import { GRANTABLE_FEATURES } from '../data/features';
+import { Overview, TodayWork, AttendancePage } from '../components/AdminPages1';
+import { ShiftPlanner, StaffManagement, ShiftRequests } from '../components/AdminPages2';
+import { TaskSearchPage, QualityPage, ReliabilityPage, ProducersPage, ReportPage } from '../components/AdminPages3';
+import { LiveNow, EmployeeMonthlyPage, NewsTypeMonthlyPage } from '../components/AdminPages4';
 
 const EMP_TABS = [
   { id: 'daily',   label: 'Daily',   icon: '📋' },
@@ -25,13 +29,12 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
   const [loading, setLoading] = useState(!state.emps.length);
 
   useEffect(() => {
-    if (state.emps.length) { setLoading(false); return; }
+    // Always load to get latest features from DB
     loadAll().finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    if (!state.emps.length || state.me) return;
-    if (!empCode) return;
+    if (!state.emps.length || !empCode) return;
     const emp = state.emps.find(e => String(e.id) === String(empCode));
     if (emp) dispatch({ type: 'SET_ME', payload: emp });
   }, [state.emps, empCode]);
@@ -49,6 +52,9 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
   const empName = me?.name || user?.email;
   const dept = me?.dept || 'NLE Editor';
 
+  // ── Admin features granted to this employee (Staff Mgmt → Edit) ──
+const grantedFeatures = GRANTABLE_FEATURES.filter(f => (me?.features || []).includes(f.id));
+  console.log('🔑 me.features:', me?.features, '| granted:', grantedFeatures.map(f=>f.id));
   return (
     <div className="app-layout" style={{paddingBottom:'var(--mob-nav-h,0px)'}}>
       {/* ── Topbar ── */}
@@ -98,6 +104,18 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
               <span className="nav-label">{t.label}</span>
             </button>
           ))}
+          {grantedFeatures.length > 0 && (
+            <div className="nav-section">
+              <div className="nav-section-label">Admin Access</div>
+              {grantedFeatures.map(t => (
+                <button key={t.id} className={`nav-item ${activeTab===t.id?'active':''}`}
+                  onClick={() => setActiveTab(t.id)}>
+                  <span className="nav-icon">{t.icon}</span>
+                  <span className="nav-label">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
         <div className="sidebar-footer">
           <div className="sidebar-date">{fmtDate(selDate)}</div>
@@ -132,6 +150,21 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
             {activeTab==='score'   && <ScoreTab empId={empId} dept={dept} selDate={selDate}/>}
             {activeTab==='history' && <HistoryTab empId={empId} dept={dept} selDate={selDate} onDateChange={setSelDate} onGoToDaily={()=>setActiveTab('daily')}/>}
             {activeTab==='search'  && <TaskSearchPage empId={empId}/>}
+
+            {/* ── Granted admin features (only render if access granted) ── */}
+            {grantedFeatures.some(f=>f.id==='overview')  && activeTab==='overview'  && <Overview selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='live')      && activeTab==='live'      && <LiveNow selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='today')     && activeTab==='today'     && <TodayWork selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='att')       && activeTab==='att'       && <AttendancePage selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='shifts')    && activeTab==='shifts'    && <ShiftPlanner selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='shiftreq')  && activeTab==='shiftreq'  && <ShiftRequests/>}
+            {grantedFeatures.some(f=>f.id==='staff')     && activeTab==='staff'     && <StaffManagement/>}
+            {grantedFeatures.some(f=>f.id==='quality')   && activeTab==='quality'   && <QualityPage selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='rel')       && activeTab==='rel'       && <ReliabilityPage selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='prod')      && activeTab==='prod'      && <ProducersPage selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='report')    && activeTab==='report'    && <ReportPage selDate={selDate}/>}
+            {grantedFeatures.some(f=>f.id==='empmonth')  && activeTab==='empmonth'  && <EmployeeMonthlyPage/>}
+            {grantedFeatures.some(f=>f.id==='typemonth') && activeTab==='typemonth' && <NewsTypeMonthlyPage/>}
           </>
         )}
       </main>
@@ -142,6 +175,14 @@ export default function EmployeeDashboard({ user, empCode, onSignOut, onSwitchAd
           {EMP_TABS.map(t => (
             <button key={t.id} className={`mob-btn ${activeTab===t.id?'active':''}`}
               onClick={() => setActiveTab(t.id)}>
+              <span className="mi">{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
+          {grantedFeatures.map(t => (
+            <button key={t.id} className={`mob-btn ${activeTab===t.id?'active':''}`}
+              onClick={() => setActiveTab(t.id)}
+              style={{color:activeTab===t.id?undefined:'var(--purple)'}}>
               <span className="mi">{t.icon}</span>
               {t.label}
             </button>

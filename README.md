@@ -1,6 +1,6 @@
 # 📺 Newsroom MIS
 
-Media Information System for TamilJanam newsroom — tracks NLE Editors, News Producers, and Voice Over staff with daily work entry, attendance, shift management, quality scoring, and reporting.
+Media Information System for newsroom — tracks NLE Editors, News Producers, and Voice Over staff with daily work entry, attendance, shift management, quality scoring, and reporting.
 
 ---
 

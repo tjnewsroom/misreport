@@ -231,4 +231,4 @@ tj-mis/
 
 ---
 
-*Built for TamilJanam Newsroom · © 2026*
+*Built for Newsroom · © 2026*

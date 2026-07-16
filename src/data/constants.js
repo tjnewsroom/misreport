@@ -14,6 +14,8 @@ export const NEWS_TYPES = [
   {key:"prog_promo",label:"Program Promo",       color:"#7c3aed", weight:30, icon:"📣"},
   {key:"main_promo",label:"Main Promo",          color:"#be185d", weight:200,icon:"🌟"},
   {key:"others",   label:"Others",               color:"#64748b", weight:0,  icon:"📌"},
+  {key:"PreRec",label:"PreRec",          color:"#be185d", weight:200,icon:"🎤"},
+
 ];
 
 export const PROD_FIELDS = [
@@ -25,6 +27,9 @@ export const PROD_FIELDS = [
   {key:"live_coords",        label:"Live Coordinations",  icon:"📡", color:"#0891b2"},
   {key:"guest_mgmt",         label:"Guest Management",    icon:"🎙", color:"#059669"},
   {key:"rundown_changes",    label:"Rundown Changes",     icon:"🔄", color:"#dc2626"},
+  {key:"PreRec",label:"PreRec",          color:"#be185d", weight:200,icon:"🎤"},
+  {key:"TicTac",label:"TicTac",          color:"#be185d", weight:200,icon:"🎤"},
+
 ];
 
 export const VO_FIELDS = [
@@ -48,6 +53,9 @@ export const QUALITY_ITEMS = [
   {key:"onair_error",   label:"On-Air Error",             sev:"major", pts:-10, icon:"🔴", depts:["News Producer"]},
   {key:"rundown_late",  label:"Rundown Sent Late",        sev:"minor", pts:-3,  icon:"⏰", depts:["News Producer"]},
   {key:"vo_mistake",    label:"VO Recording Mistake",     sev:"minor", pts:-3,  icon:"🎙", depts:["Voice Over"]},
+  {key:"PreRec",label:"PreRec", sev:"minor", pts:4,icon:"🎤",depts:["NLE Editor","News Producer"]},
+  {key:"TicTac",label:"TicTac", sev:"minor", pts:4,icon:"🎤",depts:["NLE Editor","News Producer"]},
+
 ];
 
 export const REL_ITEMS = [

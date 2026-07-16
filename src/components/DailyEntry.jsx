@@ -104,6 +104,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
 
   const items = (state.daily[empId]?.[selDate] || []);
   const prodData = state.prodDaily[empId]?.[selDate] || {};
+  const prodItems = prodData.tasks || []; // New: array of tasks with timing
   const fields = dept === 'News Producer' ? PROD_FIELDS : VO_FIELDS;
 
   const nleCurrentTime = () => new Date().toTimeString().slice(0,5);
@@ -119,12 +120,48 @@ export default function DailyEntry({ empId, dept, selDate }) {
       toast('⚠️ OUT time must be ≥ IN time.', 'er');
       return;
     }
+    // Validate against previous item's end time
+    if (field==='startTime' && val && idx > 0) {
+      const prev = updated[idx-1];
+      if (prev.endTime && val < prev.endTime) {
+        toast('⚠️ Start time cannot be before previous task ends at '+prev.endTime, 'er');
+        return;
+      }
+    }
     dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:updated }});
+  };
+
+  const updateProdItem = (idx, field, val) => {
+    const updated = prodItems.map((it, i) => i === idx ? { ...it, [field]: val } : it);
+    // Validate time
+    if ((field==='startTime'||field==='endTime') && val && selDate===todayStr() && val > nleCurrentTime()) {
+      toast('⚠️ Time cannot be greater than current time.', 'er');
+      return;
+    }
+    if (field==='endTime' && updated[idx].startTime && val && val <= updated[idx].startTime) {
+      toast('⚠️ OUT time must be ≥ IN time.', 'er');
+      return;
+    }
+    // Validate against previous item's end time
+    if (field==='startTime' && val && idx > 0) {
+      const prev = updated[idx-1];
+      if (prev.endTime && val < prev.endTime) {
+        toast('⚠️ Start time cannot be before previous task ends at '+prev.endTime, 'er');
+        return;
+      }
+    }
+    const newProdData = { ...prodData, tasks: updated };
+    dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: newProdData }});
   };
 
   const setNow = (idx, field) => {
     const now = nleCurrentTime();
     updateItem(idx, field, now);
+  };
+
+  const setProdNow = (idx, field) => {
+    const now = nleCurrentTime();
+    updateProdItem(idx, field, now);
   };
 
   const addItem = async () => {
@@ -201,6 +238,37 @@ export default function DailyEntry({ empId, dept, selDate }) {
 
   const updateProd = (key, val) => {
     dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data:{ ...prodData, [key]:val }}});
+  };
+
+  const addProdItem = async () => {
+    if (isAddingRef.current || isSavingRef.current) return;
+    isAddingRef.current = true;
+    setAddingItem(true);
+    try {
+      if (prodItems.length) {
+        const last = prodItems[prodItems.length-1];
+        if (!last.startTime || !last.endTime) {
+          toast('⚠️ IN and OUT time required for Task '+prodItems.length+' before adding new.', 'er');
+          return;
+        }
+      }
+      const newProdData = { 
+        ...prodData, 
+        tasks: [...prodItems, { type:'', label:'', startTime:'', endTime:'', count:0 }] 
+      };
+      dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: newProdData }});
+    } finally {
+      isAddingRef.current = false;
+      setAddingItem(false);
+    }
+  };
+
+  const deleteProdItem = (idx) => {
+    const newProdData = { 
+      ...prodData, 
+      tasks: prodItems.filter((_,i) => i !== idx) 
+    };
+    dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: newProdData }});
   };
 
   const adjProd = (key, delta) => {
@@ -317,25 +385,84 @@ export default function DailyEntry({ empId, dept, selDate }) {
       {(dept === 'News Producer' || dept === 'Voice Over') && (
         <div className="card">
           <div style={{ fontSize:12, fontWeight:600, color:'var(--mt)', marginBottom:16, letterSpacing:'.06em' }}>{dept==='News Producer' ? '📋 PRODUCER ACTIVITIES' : '🎤 VOICE OVER ACTIVITIES'}</div>
-          {fields.map(f => {
-            const v = parseInt(prodData[f.key]) || 0;
-            const txt = prodData[f.key+'_notes'] || '';
-            return (
-              <div key={f.key} style={{ display:'flex', alignItems:'flex-start', gap:12, padding:'12px 0', borderBottom:'1px solid var(--brd)' }}>
-                <span style={{ fontSize:20, flexShrink:0 }}>{f.icon}</span>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, fontWeight:600, marginBottom:6 }}>{f.label}</div>
-                  <div className="ctr" style={{ marginBottom:8 }}>
-                    <button className="ctr-btn" onClick={()=>adjProd(f.key,-1)}>−</button>
-                    <div className="ctr-val" style={{ color: v>0 ? f.color : 'var(--txt)' }}>{v}</div>
-                    <button className="ctr-btn" onClick={()=>adjProd(f.key,1)}>+</button>
+          
+          {/* Tasks with timing */}
+          <div style={{ marginBottom:20, paddingBottom:20, borderBottom:'1px solid var(--brd)' }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'var(--mt)', letterSpacing:'.06em', marginBottom:12 }}>Tasks with Timing</div>
+            {prodItems.length === 0 ? (
+              <div style={{ textAlign:'center', padding:16, color:'var(--mt)', fontSize:12 }}>No tasks yet. Add one below.</div>
+            ) : (
+              prodItems.map((it, idx) => {
+                const prev = idx > 0 ? prodItems[idx-1] : null;
+                const gapMins = prev ? tdiff(prev.endTime, it.startTime) : null;
+                const mins = tdiff(it.startTime, it.endTime);
+                return (
+                  <div key={idx}>
+                    {gapMins > 0 && (
+                      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px', margin:'4px 0', background:'var(--al)', borderLeft:'3px solid var(--amber)', borderRadius:6 }}>
+                        <span style={{ fontSize:11 }}>⏸</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:'var(--amber)', fontFamily:"'JetBrains Mono'" }}>Gap: {fmtMin(gapMins)}</span>
+                        <span style={{ fontSize:10, color:'var(--mt)' }}>({prev.endTime} → {it.startTime})</span>
+                      </div>
+                    )}
+                    <div className="ni-item">
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap' }}>
+                        <div style={{ width:24, height:24, borderRadius:6, background:'#2563eb', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, flexShrink:0 }}>{idx+1}</div>
+                        <select className="inp inp-sm" style={{ flex:1, maxWidth:180 }} value={it.type||''} onChange={e=>updateProdItem(idx,'type',e.target.value)}>
+                          <option value="">— Select activity —</option>
+                          {(dept === 'News Producer' ? PROD_FIELDS : VO_FIELDS).map(f=><option key={f.key} value={f.key}>{f.icon} {f.label}</option>)}
+                        </select>
+                        <input className="inp inp-sm" placeholder="Description / Notes" value={it.label||''} style={{ flex:2, minWidth:160 }} onChange={e=>updateProdItem(idx,'label',e.target.value)} />
+                        <button className="btn btn-d btn-sm" onClick={()=>deleteProdItem(idx)}>🗑 Delete</button>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:4, background:'var(--surf)', border:`${!it.startTime?'2px solid var(--red)':'1px solid var(--brd)'}`, borderRadius:7, padding:'4px 8px' }}>
+                          <span style={{ fontSize:10, fontWeight:700, color:!it.startTime?'var(--red)':'var(--mt)' }}>IN</span>
+                          <input type="time" className="inp inp-sm" value={it.startTime||''} style={{ border:'none', background:'transparent', padding:'2px 4px', fontSize:12, width:88 }} onChange={e=>updateProdItem(idx,'startTime',e.target.value)} />
+                          <button onClick={()=>setProdNow(idx,'startTime')} style={{ background:'var(--bl)', border:'none', borderRadius:5, padding:'2px 6px', fontSize:10, color:'var(--blue)', cursor:'pointer', fontWeight:700 }}>Now</button>
+                        </div>
+                        <span style={{ color:'var(--mt)' }}>→</span>
+                        <div style={{ display:'flex', alignItems:'center', gap:4, background:'var(--surf)', border:`${!it.endTime?'2px solid var(--red)':'1px solid var(--brd)'}`, borderRadius:7, padding:'4px 8px' }}>
+                          <span style={{ fontSize:10, fontWeight:700, color:!it.endTime?'var(--red)':'var(--mt)' }}>OUT</span>
+                          <input type="time" className="inp inp-sm" value={it.endTime||''} style={{ border:'none', background:'transparent', padding:'2px 4px', fontSize:12, width:88 }} onChange={e=>updateProdItem(idx,'endTime',e.target.value)} />
+                          <button onClick={()=>setProdNow(idx,'endTime')} style={{ background:'var(--gl)', border:'none', borderRadius:5, padding:'2px 6px', fontSize:10, color:'var(--green)', cursor:'pointer', fontWeight:700 }}>Now</button>
+                        </div>
+                        {mins !== null && <span style={{ fontSize:12, fontWeight:700, color:'var(--green)', fontFamily:"'JetBrains Mono'", background:'var(--gl)', padding:'3px 10px', borderRadius:6 }}>⏱ {fmtMin(mins)}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <input className="inp inp-sm" placeholder="Notes / details..." value={txt} onChange={e=>updateProd(f.key+'_notes',e.target.value)} />
+                );
+              })
+            )}
+            <button className="btn btn-p" style={{ width:'100%', padding:11, marginTop:10 }} onClick={addProdItem} disabled={addingItem}>
+              {addingItem ? '⏳ Saving…' : '＋ Add Task'}
+            </button>
+          </div>
+
+          {/* Activities Count section - commented out */}
+          {/* <div style={{ marginBottom:16 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'var(--mt)', letterSpacing:'.06em', marginBottom:12 }}>Activities Count</div>
+            {fields.map(f => {
+              const v = parseInt(prodData[f.key]) || 0;
+              const txt = prodData[f.key+'_notes'] || '';
+              return (
+                <div key={f.key} style={{ display:'flex', alignItems:'flex-start', gap:12, padding:'12px 0', borderBottom:'1px solid var(--brd)' }}>
+                  <span style={{ fontSize:20, flexShrink:0 }}>{f.icon}</span>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, marginBottom:6 }}>{f.label}</div>
+                    <div className="ctr" style={{ marginBottom:8 }}>
+                      <button className="ctr-btn" onClick={()=>adjProd(f.key,-1)}>−</button>
+                      <div className="ctr-val" style={{ color: v>0 ? f.color : 'var(--txt)' }}>{v}</div>
+                      <button className="ctr-btn" onClick={()=>adjProd(f.key,1)}>+</button>
+                    </div>
+                    <input className="inp inp-sm" placeholder="Notes / details..." value={txt} onChange={e=>updateProd(f.key+'_notes',e.target.value)} />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-          <button className="btn btn-p" style={{ width:'100%', marginTop:14, padding:11 }} onClick={saveProd}>💾 Save Entry</button>
+              );
+            })}
+          </div> */}
+
+          {/* <button className="btn btn-p" style={{ width:'100%', marginTop:14, padding:11 }} onClick={saveProd}>💾 Save Entry</button> */}
         </div>
       )}
     </div>

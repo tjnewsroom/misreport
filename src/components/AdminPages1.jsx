@@ -207,7 +207,7 @@ export function TodayWork({ selDate }) {
               const isOpen = !!openRows[e.id];
               return (
                 <div key={e.id} className="card" style={{marginBottom:10,borderLeft:`3px solid ${hasAnyData?dc:'var(--brd)'}`}}>
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:isOpen?12:0,flexWrap:'wrap'}}>
+                  <div onClick={()=>setOpenRows(prev=>({...prev,[e.id]:!prev[e.id]}))} style={{display:'flex',alignItems:'center',gap:10,marginBottom:isOpen?12:0,flexWrap:'wrap',cursor:'pointer'}}>
                     <div style={{width:36,height:36,borderRadius:9,background:`${dc}18`,color:dc,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{e.name[0]}</div>
                     <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{e.name}</div><div style={{fontSize:10,color:'var(--mt)',fontFamily:"'JetBrains Mono'"}}>{e.id}</div></div>
                     <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',justifyContent:'flex-end'}}>
@@ -226,10 +226,10 @@ export function TodayWork({ selDate }) {
                           </>
                         ) : <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic'}}>No entry</div>}
                       </div>
-                      <button onClick={()=>setOpenRows(prev=>({...prev,[e.id]:!prev[e.id]}))} style={{border:'1px solid var(--brd)',background:'transparent',borderRadius:999,padding:'6px 12px',fontSize:11,color:'var(--txt)',cursor:'pointer',whiteSpace:'nowrap'}}>{isOpen ? 'Close' : 'Open'}</button>
+                      <span style={{transition:'transform .2s',transform:isOpen?'rotate(90deg)':'none',flexShrink:0,fontSize:16,cursor:'pointer'}}>▶</span>
                     </div>
                   </div>
-                  {!isOpen && hasAnyData && <div style={{fontSize:12,color:'var(--mt)',marginTop:-6,marginBottom:8}}>Details are hidden. Click open to view full work summary.</div>}
+                  {!isOpen && hasAnyData && <div style={{fontSize:12,color:'var(--mt)',marginTop:-6,marginBottom:8}}>Details are hidden. Click expand to view full work summary.</div>}
                   {isOpen && items.length>0 && dept==='NLE Editor' && (
                     <div style={{overflowX:'auto'}}>
                       <table className="tbl" style={{fontSize:12}}>

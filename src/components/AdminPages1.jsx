@@ -187,7 +187,11 @@ export function TodayWork({ selDate }) {
           const empMatch=[e.name,e.id,dept].join(' ').toLowerCase().includes(term);
           if(empMatch)return true;
           const items=state.daily[e.id]?.[selDate]||[];
-          return items.some(it=>{const nt=NEWS_TYPES.find(n=>n.key===it.type)||NEWS_TYPES[0];return [nt.label,it.desc||'',it.type].join(' ').toLowerCase().includes(term);});
+          if(items.some(it=>{const nt=NEWS_TYPES.find(n=>n.key===it.type)||NEWS_TYPES[0];return [nt.label,it.desc||'',it.type].join(' ').toLowerCase().includes(term);}))return true;
+          // ✅ Also match against producer/VO tasks
+          const pTasks=state.prodDaily[e.id]?.[selDate]?.tasks||[];
+          const pFields=e.dept==='News Producer'?PROD_FIELDS:e.dept==='Voice Over'?VO_FIELDS:[];
+          return pTasks.some(t=>{const f=pFields.find(x=>x.key===t.type);return [f?.label||'',t.label||'',t.type||''].join(' ').toLowerCase().includes(term);});
         });
         if(!visibleEmps.length)return null;
         return (
@@ -202,7 +206,12 @@ export function TodayWork({ selDate }) {
               const pd=state.prodDaily[e.id]?.[selDate]||{};
               const isProdVO = dept==='News Producer'||dept==='Voice Over';
               const prodFields = isProdVO ? (dept==='News Producer'?PROD_FIELDS:VO_FIELDS) : [];
-              const hasProdData = prodFields.some(f=>parseInt(pd[f.key])>0);
+              // ✅ New task-based producer entries
+              const pTasks = isProdVO ? (pd.tasks||[]) : [];
+              const pMins = pTasks.reduce((s,t)=>s+(tdiff(t.startTime,t.endTime)??0),0);
+              let pGap=0;
+              for(let i=1;i<pTasks.length;i++){const g=tdiff(pTasks[i-1].endTime,pTasks[i].startTime);if(g>0)pGap+=g;}
+              const hasProdData = pTasks.length>0 || prodFields.some(f=>parseInt(pd[f.key])>0);
               const hasAnyData = items.length>0 || hasProdData;
               const isOpen = !!openRows[e.id];
               return (
@@ -218,6 +227,12 @@ export function TodayWork({ selDate }) {
                             <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--green)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(mins)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TIME</div></div>
                             <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{wpts}</div><div style={{fontSize:9,color:'var(--mt)'}}>PTS</div></div>
                             {totalGap>0&&<div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(totalGap)}</div><div style={{fontSize:9,color:'var(--mt)'}}>GAP</div></div>}
+                          </>
+                        ) : isProdVO && pTasks.length>0 ? (
+                          <>
+                            <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:dc,fontFamily:"'JetBrains Mono'"}}>{pTasks.length}</div><div style={{fontSize:9,color:'var(--mt)'}}>TASKS</div></div>
+                            <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--green)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(pMins)}</div><div style={{fontSize:9,color:'var(--mt)'}}>TIME</div></div>
+                            {pGap>0&&<div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>{fmtMin(pGap)}</div><div style={{fontSize:9,color:'var(--mt)'}}>GAP</div></div>}
                           </>
                         ) : isProdVO && hasProdData ? (
                           <>
@@ -251,7 +266,29 @@ export function TodayWork({ selDate }) {
                       </table>
                     </div>
                   )}
-                  {isOpen && (dept==='News Producer'||dept==='Voice Over') && (() => {
+                  {isOpen && (dept==='News Producer'||dept==='Voice Over') && pTasks.length>0 && (
+                    <div style={{overflowX:'auto'}}>
+                      <table className="tbl" style={{fontSize:12}}>
+                        <thead><tr><th>#</th><th>Activity</th><th>IN→OUT</th><th>Time</th><th>Description</th></tr></thead>
+                        <tbody>
+                          {pTasks.map((t,i)=>{
+                            const f=prodFields.find(x=>x.key===t.type);
+                            const m=tdiff(t.startTime,t.endTime);
+                            const prev=pTasks[i-1];
+                            const gapMins=i>0?tdiff(prev.endTime,t.startTime):null;
+                            return (
+                              <>
+                                {gapMins>0&&<tr key={`gap-${i}`}><td colSpan="5" style={{padding:'3px 10px',background:'var(--al)',borderBottom:'1px solid var(--brd)'}}><span style={{fontSize:10,fontWeight:700,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>⏸ Gap: {fmtMin(gapMins)}</span></td></tr>}
+                                <tr key={i}><td style={{color:'var(--mt)'}}>{i+1}</td><td><span className="bdg" style={{background:`${f?.color||'#888'}18`,color:f?.color||'#888'}}>{f?.icon||'📋'} {f?.label||t.type||'—'}</span></td><td style={{fontFamily:"'JetBrains Mono'",fontSize:11,color:'var(--mt)'}}>{t.startTime||'—'} → {t.endTime||'—'}</td><td style={{fontFamily:"'JetBrains Mono'",color:'var(--green)'}}>{m!==null?fmtMin(m):'—'}</td><td style={{color:'var(--mt)'}}>{t.label||'—'}</td></tr>
+                              </>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {pd.notes && <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic',padding:'6px 10px',background:'var(--surf2)',borderRadius:6,marginTop:8}}>📝 {pd.notes}</div>}
+                    </div>
+                  )}
+                  {isOpen && (dept==='News Producer'||dept==='Voice Over') && pTasks.length===0 && (() => {
                     const fields = dept==='News Producer' ? PROD_FIELDS : VO_FIELDS;
                     const hasData = fields.some(f => parseInt(pd[f.key]) > 0);
                     if (!hasData) return <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic',marginTop:4}}>No entry yet</div>;

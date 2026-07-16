@@ -251,6 +251,11 @@ export default function DailyEntry({ empId, dept, selDate }) {
           toast('⚠️ IN and OUT time required for Task '+prodItems.length+' before adding new.', 'er');
           return;
         }
+        // ✅ Auto-save the prior tasks to Supabase before adding a new one —
+        // same behavior as NLE editor's addItem. Producer/VO data is one row
+        // per day, so persisting prodData saves all existing tasks at once.
+        const savedOk = await saveProdEntry(empId, selDate, dept, prodData);
+        if (!savedOk) return;
       }
       const newProdData = { 
         ...prodData, 
@@ -263,12 +268,33 @@ export default function DailyEntry({ empId, dept, selDate }) {
     }
   };
 
-  const deleteProdItem = (idx) => {
+  const deleteProdItem = async (idx) => {
     const newProdData = { 
       ...prodData, 
       tasks: prodItems.filter((_,i) => i !== idx) 
     };
     dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: newProdData }});
+    // ✅ Persist the deletion immediately (editor's delete also hits the DB)
+    const ok = await saveProdEntry(empId, selDate, dept, newProdData);
+    if (ok) toast('✓ Deleted');
+  };
+
+  // ✅ Per-task Save — mirrors NLE editor's saveItem so producers can edit
+  // old entries via History → "Open in Daily Entry" and persist the changes.
+  const saveProdTask = async (idx) => {
+    if (isSavingRef.current || isAddingRef.current) return;
+    isSavingRef.current = true;
+    setSavingIdx(idx);
+    try {
+      const it = prodItems[idx];
+      if (!it.startTime || !it.endTime) { toast('⚠️ IN and OUT time required.', 'er'); return; }
+      if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
+      const ok = await saveProdEntry(empId, selDate, dept, prodData);
+      if (ok) toast('✓ Saved');
+    } finally {
+      isSavingRef.current = false;
+      setSavingIdx(null);
+    }
   };
 
   const adjProd = (key, delta) => {
@@ -428,6 +454,9 @@ export default function DailyEntry({ empId, dept, selDate }) {
                           <button onClick={()=>setProdNow(idx,'endTime')} style={{ background:'var(--gl)', border:'none', borderRadius:5, padding:'2px 6px', fontSize:10, color:'var(--green)', cursor:'pointer', fontWeight:700 }}>Now</button>
                         </div>
                         {mins !== null && <span style={{ fontSize:12, fontWeight:700, color:'var(--green)', fontFamily:"'JetBrains Mono'", background:'var(--gl)', padding:'3px 10px', borderRadius:6 }}>⏱ {fmtMin(mins)}</span>}
+                        <button className="btn btn-p btn-sm" onClick={()=>saveProdTask(idx)} disabled={savingIdx!==null || addingItem}>
+                          {savingIdx===idx ? '⏳…' : '💾 Save'}
+                        </button>
                       </div>
                     </div>
                   </div>

@@ -63,9 +63,21 @@ export default function HistoryTab({ empId, dept, onDateChange, onGoToDaily }) {
           label2 = `${wpts} weighted pts`;
         } else {
           prodData = state.prodDaily[empId]?.[d] || {};
-          const total = fields.reduce((s, f) => s + (parseInt(prodData[f.key]) || 0), 0);
-          label1 = `${total} activities`;
-          label2 = fields.filter(f => parseInt(prodData[f.key]) > 0).map(f => `${f.icon}${prodData[f.key]}`).join(' ') || '—';
+          const tasks = prodData.tasks || [];
+          if (tasks.length) {
+            // ✅ New task-based entries — same summary format as NLE editor
+            const mins = tasks.reduce((s, it) => s + (tdiff(it.startTime, it.endTime) ?? 0), 0);
+            label1 = `${tasks.length} task${tasks.length !== 1 ? 's' : ''} · ${fmtMin(mins)}`;
+            label2 = tasks.map(t => {
+              const f = fields.find(x => x.key === t.type);
+              return f ? f.icon : '📋';
+            }).join(' ');
+          } else {
+            // Legacy count-based entries
+            const total = fields.reduce((s, f) => s + (parseInt(prodData[f.key]) || 0), 0);
+            label1 = `${total} activities`;
+            label2 = fields.filter(f => parseInt(prodData[f.key]) > 0).map(f => `${f.icon}${prodData[f.key]}`).join(' ') || '—';
+          }
         }
 
         const dObj = new Date(d + 'T00:00');
@@ -167,8 +179,58 @@ export default function HistoryTab({ empId, dept, onDateChange, onGoToDaily }) {
                       </div>
                     </div>
                   )
+                ) : (prodData.tasks || []).length > 0 ? (
+                  // ✅ Producer/VO — new task-based entries, same table layout as editor
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.8rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surf2)' }}>
+                          {['#', 'Activity', 'Description', 'IN', 'OUT', 'Duration'].map(h => (
+                            <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--mt)', fontWeight: 600, fontSize: '.68rem', textTransform: 'uppercase', borderBottom: '1px solid var(--brd)', whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(prodData.tasks || []).map((it, i) => {
+                          const f = fields.find(x => x.key === it.type);
+                          const mins = tdiff(it.startTime, it.endTime);
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--brd)' }}>
+                              <td style={{ padding: '6px 10px', color: 'var(--dim)', fontWeight: 700 }}>{i + 1}</td>
+                              <td style={{ padding: '6px 10px' }}>
+                                <span style={{ background: (f?.color || '#888') + '22', color: f?.color || '#888', padding: '2px 7px', borderRadius: 4, fontSize: '.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                  {f?.icon || '📋'} {f?.label || it.type || '—'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '6px 10px', color: 'var(--txt)', maxWidth: 180, wordBreak: 'break-word' }}>{it.label || '—'}</td>
+                              <td style={{ padding: '6px 10px', color: 'var(--green)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{it.startTime || '—'}</td>
+                              <td style={{ padding: '6px 10px', color: 'var(--red)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{it.endTime || '—'}</td>
+                              <td style={{ padding: '6px 10px', color: 'var(--amber)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{mins !== null ? fmtMin(mins) : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {/* Summary row — same as editor */}
+                    <div style={{ display: 'flex', gap: 16, padding: '10px 4px 0', flexWrap: 'wrap' }}>
+                      {[
+                        { label: 'Total Tasks', val: (prodData.tasks || []).length, color: 'var(--blue)' },
+                        { label: 'Total Time', val: fmtMin((prodData.tasks || []).reduce((s, it) => s + (tdiff(it.startTime, it.endTime) ?? 0), 0)), color: 'var(--green)' },
+                      ].map(stat => (
+                        <div key={stat.label} style={{ background: 'var(--surf2)', padding: '6px 14px', borderRadius: 8, textAlign: 'center' }}>
+                          <div style={{ fontSize: '1rem', fontWeight: 800, color: stat.color, fontFamily: "'JetBrains Mono'" }}>{stat.val}</div>
+                          <div style={{ fontSize: '.65rem', color: 'var(--mt)', marginTop: 2 }}>{stat.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {prodData.notes && (
+                      <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--surf2)', borderRadius: 8, fontSize: '.82rem', color: 'var(--txt)' }}>
+                        📝 {prodData.notes}
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  // Producer/VO
+                  // Producer/VO — legacy count-based entries
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                     {fields.map(f => {
                       const v = parseInt(prodData[f.key]) || 0;

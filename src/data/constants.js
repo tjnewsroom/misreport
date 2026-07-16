@@ -14,7 +14,9 @@ export const NEWS_TYPES = [
   {key:"prog_promo",label:"Program Promo",       color:"#7c3aed", weight:30, icon:"📣"},
   {key:"main_promo",label:"Main Promo",          color:"#be185d", weight:200,icon:"🌟"},
   {key:"others",   label:"Others",               color:"#64748b", weight:0,  icon:"📌"},
-  {key:"PreRec",label:"PreRec",          color:"#be185d", weight:200,icon:"🎤"},
+  {key:"PreRec",label:"TicTac",          color:"#be185d", weight:4,icon:"🎤"},
+  {key:"TicTac",label:"PreRec",          color:"#be185d", weight:4,icon:"🎤"},
+
 
 ];
 
@@ -27,8 +29,8 @@ export const PROD_FIELDS = [
   {key:"live_coords",        label:"Live Coordinations",  icon:"📡", color:"#0891b2"},
   {key:"guest_mgmt",         label:"Guest Management",    icon:"🎙", color:"#059669"},
   {key:"rundown_changes",    label:"Rundown Changes",     icon:"🔄", color:"#dc2626"},
-  {key:"PreRec",label:"PreRec",          color:"#be185d", weight:200,icon:"🎤"},
-  {key:"TicTac",label:"TicTac",          color:"#be185d", weight:200,icon:"🎤"},
+  {key:"PreRec",label:"PreRec",          color:"#be185d", weight:4,icon:"🎤"},
+  {key:"TicTac",label:"TicTac",          color:"#be185d", weight:4,icon:"🎤"},
 
 ];
 

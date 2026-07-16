@@ -16,7 +16,7 @@ export const NEWS_TYPES = [
   {key:"others",   label:"Others",               color:"#64748b", weight:0,  icon:"📌"},
   {key:"PreRec",label:"TicTac",          color:"#be185d", weight:4,icon:"🎤"},
   {key:"TicTac",label:"PreRec",          color:"#be185d", weight:4,icon:"🎤"},
-
+{key:"Repeat_ Cut",label:"PreRec",          color:"#be185d", weight:4,icon:"✂️"},
 
 ];
 
@@ -31,6 +31,7 @@ export const PROD_FIELDS = [
   {key:"rundown_changes",    label:"Rundown Changes",     icon:"🔄", color:"#dc2626"},
   {key:"PreRec",label:"PreRec",          color:"#be185d", weight:4,icon:"🎤"},
   {key:"TicTac",label:"TicTac",          color:"#be185d", weight:4,icon:"🎤"},
+  {key:"Repeat_ Cut",label:"PreRec",          color:"#be185d", weight:4,icon:"✂️"},
 
 ];
 

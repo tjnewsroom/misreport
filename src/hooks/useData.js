@@ -21,6 +21,11 @@ async function fetchAll(table, query = {}) {
   return all;
 }
 
+// ── Overlap helpers ──────────────────────────────────────────────────────────
+// Two HH:MM ranges overlap if each starts before the other ends.
+// Exclusive endpoints: back-to-back entries (14:45→14:53, then 14:53→15:00) are OK.
+const timeOverlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
+
 export function useData() {
   const { state, dispatch } = useApp();
   const toast = useToast();
@@ -144,9 +149,53 @@ const emps = (ed || []).map(e => ({ id: e.emp_code, name: e.name, dept: e.dept, 
 
   // ── Save / Delete helpers ──────────────────────────────────────────────────
 
+  // ✅ Cross-machine overlap guard for NLE entries.
+  // Fetches this employee's rows for the date FRESH from Supabase (the shared
+  // source of truth), so it catches entries saved from another browser/machine
+  // that this browser's local state has never seen. Returns the conflicting
+  // row if the candidate overlaps anything, or null if clear.
+  const checkNLEOverlap = async (uuid, date, item) => {
+    if (!item.startTime || !item.endTime) return null; // manual-mins/timeless entries: nothing to check
+    const { data, error } = await sb
+      .from('nle_daily_entries')
+      .select('id, start_time, end_time, description')
+      .eq('emp_id', uuid)
+      .eq('date', date);
+    if (error) {
+      // If the check itself fails (network blip), don't block the save —
+      // same behavior as before this guard existed. Just log it.
+      console.error('Overlap check failed:', error.message);
+      return null;
+    }
+    for (const r of (data || [])) {
+      if (item._id && r.id === item._id) continue; // don't compare a row against itself on UPDATE
+      const s = r.start_time?.slice(0, 5);
+      const e = r.end_time?.slice(0, 5);
+      if (!s || !e) continue;
+      if (timeOverlaps(item.startTime, item.endTime, s, e)) {
+        return { start: s, end: e, desc: r.description || '' };
+      }
+    }
+    return null;
+  };
+
   const saveNLEItem = async (empCode, date, item) => {
     const uuid = getEmpUUID(empCode);
     if (!uuid) { toast('UUID not found for: ' + empCode, 'er'); return false; }
+
+    // ✅ Block overlapping entries BEFORE they reach the DB — works across
+    // browsers/machines because the check reads from Supabase, not local state.
+    const conflict = await checkNLEOverlap(uuid, date, item);
+    if (conflict) {
+      toast(
+        `⚠️ Overlaps existing entry ${conflict.start}–${conflict.end}` +
+        (conflict.desc ? ` (${conflict.desc})` : '') +
+        `. It may have been saved from another browser — refresh the page to see all entries.`,
+        'er'
+      );
+      return false;
+    }
+
     if (item._id) {
       // UPDATE existing row — safe, always idempotent
       const { error } = await sb.from('nle_daily_entries').update({
@@ -205,9 +254,61 @@ const emps = (ed || []).map(e => ({ id: e.emp_code, name: e.name, dept: e.dept, 
   const saveProdEntry = async (empCode, date, dept, data) => {
     const uuid = getEmpUUID(empCode);
     if (!uuid) { toast('UUID not found for: ' + empCode, 'er'); return false; }
-    const { error } = await sb.from('producer_daily').upsert({ emp_id: uuid, date, dept, ...data }, { onConflict: 'emp_id,date' });
+
+    // ── Stamp a stable id (_tid) on every task — required for cross-browser merge ──
+    const localTasks = (data.tasks || []).map(t => t._tid ? t : { ...t, _tid: crypto.randomUUID() });
+    const localTombs = data.deleted_tids || [];
+
+    // ── Fetch the current DB row FRESH (shared source of truth) so we can see
+    //    tasks saved from other browsers/machines that this browser never loaded ──
+    const { data: dbRow, error: fetchErr } = await sb
+      .from('producer_daily')
+      .select('tasks, deleted_tids')
+      .eq('emp_id', uuid)
+      .eq('date', date)
+      .maybeSingle();
+    if (fetchErr) console.error('Prod merge fetch failed:', fetchErr.message);
+
+    // ── Merge rules ──
+    // 1. Local tasks win (user just edited them here)
+    // 2. Tasks in DB but not local (added by ANOTHER browser) are KEPT, not overwritten
+    // 3. Tombstoned (deleted) task ids stay deleted everywhere — deletion is not resurrected
+    const tombstones = Array.from(new Set([...(dbRow?.deleted_tids || []), ...localTombs]));
+    const tombSet = new Set(tombstones);
+    const localIds = new Set(localTasks.map(t => t._tid));
+    const fromOtherBrowsers = (dbRow?.tasks || []).filter(
+      t => t._tid && !localIds.has(t._tid) && !tombSet.has(t._tid)
+    );
+    const mergedTasks = [...localTasks.filter(t => !tombSet.has(t._tid)), ...fromOtherBrowsers]
+      .sort((a, b) => {
+        if (a.startTime && b.startTime && a.startTime !== b.startTime) return a.startTime < b.startTime ? -1 : 1;
+        if (a.startTime && !b.startTime) return -1;
+        if (!a.startTime && b.startTime) return 1;
+        return 0;
+      });
+
+    // ── Reject overlapping tasks in the MERGED set — catches collisions with
+    //    tasks entered from another browser too ──
+    const timed = mergedTasks.filter(t => t.startTime && t.endTime);
+    for (let i = 0; i < timed.length; i++) {
+      for (let j = i + 1; j < timed.length; j++) {
+        if (timeOverlaps(timed[i].startTime, timed[i].endTime, timed[j].startTime, timed[j].endTime)) {
+          toast(
+            `⚠️ Task times overlap: ${timed[i].startTime}–${timed[i].endTime} and ${timed[j].startTime}–${timed[j].endTime}. One may be from another browser session. Fix the timings before saving.`,
+            'er'
+          );
+          return false;
+        }
+      }
+    }
+
+    const payload = { ...data, emp_id: uuid, date, dept, tasks: mergedTasks, deleted_tids: tombstones };
+    const { error } = await sb.from('producer_daily').upsert(payload, { onConflict: 'emp_id,date' });
     if (error) { toast('Save failed: ' + error.message, 'er'); return false; }
-    return true;
+
+    // Return the merged row (truthy — existing `if (ok)` checks keep working)
+    // so callers can sync local state with tasks pulled in from other browsers.
+    return payload;
   };
 
   const saveBreakItem = async (empCode, date, brk) => {

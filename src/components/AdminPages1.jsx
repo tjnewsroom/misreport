@@ -3,6 +3,14 @@ import { useApp } from '../hooks/useApp';
 import { NEWS_TYPES, PROD_FIELDS, VO_FIELDS, DEPTS } from '../data/constants';
 import { fmtDate, tdiff, fmtMin, shortN, deptColor } from '../lib/utils';
 
+// Raw signed gap in minutes — NO midnight wrap. Negative = overlap.
+// tdiff wraps negatives to +24h (14:53→14:45 becomes 23h52m), which is wrong for gaps.
+const rawGap = (endT, startT) => {
+  if (!endT || !startT) return null;
+  const m = t => parseInt(t.slice(0,2),10)*60 + parseInt(t.slice(3,5),10);
+  return m(startT) - m(endT);
+};
+
 export function Overview({ selDate }) {
   const { state } = useApp();
   const allE = state.emps.filter(e=>e.is_active);
@@ -202,7 +210,7 @@ export function TodayWork({ selDate }) {
               const mins=items.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
               const wpts=items.reduce((s,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type)||{weight:1};return s+nt.weight;},0);
               let totalGap=0;
-              for(let i=1;i<items.length;i++){const g=tdiff(items[i-1].endTime,items[i].startTime);if(g>0)totalGap+=g;}
+              for(let i=1;i<items.length;i++){const g=rawGap(items[i-1].endTime,items[i].startTime);if(g>0)totalGap+=g;}
               const pd=state.prodDaily[e.id]?.[selDate]||{};
               const isProdVO = dept==='News Producer'||dept==='Voice Over';
               const prodFields = isProdVO ? (dept==='News Producer'?PROD_FIELDS:VO_FIELDS) : [];
@@ -210,7 +218,7 @@ export function TodayWork({ selDate }) {
               const pTasks = isProdVO ? (pd.tasks||[]) : [];
               const pMins = pTasks.reduce((s,t)=>s+(tdiff(t.startTime,t.endTime)??0),0);
               let pGap=0;
-              for(let i=1;i<pTasks.length;i++){const g=tdiff(pTasks[i-1].endTime,pTasks[i].startTime);if(g>0)pGap+=g;}
+              for(let i=1;i<pTasks.length;i++){const g=rawGap(pTasks[i-1].endTime,pTasks[i].startTime);if(g>0)pGap+=g;}
               const hasProdData = pTasks.length>0 || prodFields.some(f=>parseInt(pd[f.key])>0);
               const hasAnyData = items.length>0 || hasProdData;
               const isOpen = !!openRows[e.id];
@@ -254,10 +262,11 @@ export function TodayWork({ selDate }) {
                             const nt=NEWS_TYPES.find(n=>n.key===it.type)||NEWS_TYPES[0];
                             const m=tdiff(it.startTime,it.endTime)??it.manualMins??null;
                             const prev=items[i-1];
-                            const gapMins=i>0?tdiff(prev.endTime,it.startTime):null;
+                            const gapMins=i>0?rawGap(prev.endTime,it.startTime):null;
                             return (
                               <>
                                 {gapMins>0&&<tr key={`gap-${i}`}><td colSpan="6" style={{padding:'3px 10px',background:'var(--al)',borderBottom:'1px solid var(--brd)'}}><span style={{fontSize:10,fontWeight:700,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>⏸ Gap: {fmtMin(gapMins)}</span></td></tr>}
+                                {gapMins!==null&&gapMins<0&&<tr key={`ovl-${i}`}><td colSpan="6" style={{padding:'3px 10px',background:'var(--rl)',borderBottom:'1px solid var(--brd)'}}><span style={{fontSize:10,fontWeight:700,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>⚠️ Overlap: {fmtMin(-gapMins)} (starts {it.startTime} before previous ends {prev.endTime})</span></td></tr>}
                                 <tr key={i}><td style={{color:'var(--mt)'}}>{i+1}</td><td><span className="bdg" style={{background:`${nt.color}18`,color:nt.color}}>{nt.icon} {nt.label}</span></td><td style={{fontFamily:"'JetBrains Mono'",fontSize:11,color:'var(--mt)'}}>{it.startTime||'—'} → {it.endTime||'—'}</td><td style={{fontFamily:"'JetBrains Mono'",color:'var(--green)'}}>{m!==null?fmtMin(m):'—'}</td><td style={{fontFamily:"'JetBrains Mono'",fontWeight:700,color:nt.color}}>×{nt.weight}</td><td style={{color:'var(--mt)'}}>{it.desc||'—'}</td></tr>
                               </>
                             );
@@ -275,10 +284,11 @@ export function TodayWork({ selDate }) {
                             const f=prodFields.find(x=>x.key===t.type);
                             const m=tdiff(t.startTime,t.endTime);
                             const prev=pTasks[i-1];
-                            const gapMins=i>0?tdiff(prev.endTime,t.startTime):null;
+                            const gapMins=i>0?rawGap(prev.endTime,t.startTime):null;
                             return (
                               <>
                                 {gapMins>0&&<tr key={`gap-${i}`}><td colSpan="5" style={{padding:'3px 10px',background:'var(--al)',borderBottom:'1px solid var(--brd)'}}><span style={{fontSize:10,fontWeight:700,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>⏸ Gap: {fmtMin(gapMins)}</span></td></tr>}
+                                {gapMins!==null&&gapMins<0&&<tr key={`ovl-${i}`}><td colSpan="5" style={{padding:'3px 10px',background:'var(--rl)',borderBottom:'1px solid var(--brd)'}}><span style={{fontSize:10,fontWeight:700,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>⚠️ Overlap: {fmtMin(-gapMins)} (starts {t.startTime} before previous ends {prev.endTime})</span></td></tr>}
                                 <tr key={i}><td style={{color:'var(--mt)'}}>{i+1}</td><td><span className="bdg" style={{background:`${f?.color||'#888'}18`,color:f?.color||'#888'}}>{f?.icon||'📋'} {f?.label||t.type||'—'}</span></td><td style={{fontFamily:"'JetBrains Mono'",fontSize:11,color:'var(--mt)'}}>{t.startTime||'—'} → {t.endTime||'—'}</td><td style={{fontFamily:"'JetBrains Mono'",color:'var(--green)'}}>{m!==null?fmtMin(m):'—'}</td><td style={{color:'var(--mt)'}}>{t.label||'—'}</td></tr>
                               </>
                             );

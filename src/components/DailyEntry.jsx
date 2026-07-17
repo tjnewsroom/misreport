@@ -5,6 +5,14 @@ import { useToast } from '../hooks/useToast';
 import { NEWS_TYPES, PROD_FIELDS, VO_FIELDS } from '../data/constants';
 import { todayStr, fmtDate, tdiff, fmtMin } from '../lib/utils';
 
+// Raw signed gap in minutes — NO midnight wrap. Negative = overlap.
+// tdiff wraps negatives to +24h (14:53→14:45 becomes 23h52m), which is wrong for gaps.
+const rawGap = (endT, startT) => {
+  if (!endT || !startT) return null;
+  const m = t => parseInt(t.slice(0,2),10)*60 + parseInt(t.slice(3,5),10);
+  return m(startT) - m(endT);
+};
+
 function AttendanceCard({ empId, dept, selDate }) {
   const { state, dispatch } = useApp();
   const { recordIN, recordOUT } = useData();
@@ -245,21 +253,24 @@ export default function DailyEntry({ empId, dept, selDate }) {
     isAddingRef.current = true;
     setAddingItem(true);
     try {
+      let base = prodData;
       if (prodItems.length) {
         const last = prodItems[prodItems.length-1];
         if (!last.startTime || !last.endTime) {
           toast('⚠️ IN and OUT time required for Task '+prodItems.length+' before adding new.', 'er');
           return;
         }
-        // ✅ Auto-save the prior tasks to Supabase before adding a new one —
-        // same behavior as NLE editor's addItem. Producer/VO data is one row
-        // per day, so persisting prodData saves all existing tasks at once.
-        const savedOk = await saveProdEntry(empId, selDate, dept, prodData);
-        if (!savedOk) return;
+        // ✅ Auto-save prior tasks to Supabase before adding a new one (same as
+        // NLE editor's addItem). saveProdEntry returns the MERGED row — including
+        // tasks saved from other browsers/machines — so we build on that, not on
+        // this browser's possibly-stale copy.
+        const saved = await saveProdEntry(empId, selDate, dept, prodData);
+        if (!saved) return;
+        base = saved;
       }
       const newProdData = { 
-        ...prodData, 
-        tasks: [...prodItems, { type:'', label:'', startTime:'', endTime:'', count:0 }] 
+        ...base, 
+        tasks: [...(base.tasks || []), { type:'', label:'', startTime:'', endTime:'', count:0, _tid: crypto.randomUUID() }] 
       };
       dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: newProdData }});
     } finally {
@@ -269,18 +280,26 @@ export default function DailyEntry({ empId, dept, selDate }) {
   };
 
   const deleteProdItem = async (idx) => {
+    const removed = prodItems[idx];
     const newProdData = { 
       ...prodData, 
-      tasks: prodItems.filter((_,i) => i !== idx) 
+      tasks: prodItems.filter((_,i) => i !== idx),
+      // ✅ Tombstone the deleted task's id so the merge in saveProdEntry never
+      // resurrects it from another browser's copy.
+      deleted_tids: [...(prodData.deleted_tids || []), ...(removed?._tid ? [removed._tid] : [])]
     };
     dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: newProdData }});
-    // ✅ Persist the deletion immediately (editor's delete also hits the DB)
-    const ok = await saveProdEntry(empId, selDate, dept, newProdData);
-    if (ok) toast('✓ Deleted');
+    const saved = await saveProdEntry(empId, selDate, dept, newProdData);
+    if (saved) {
+      dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: saved }});
+      toast('✓ Deleted');
+    }
   };
 
-  // ✅ Per-task Save — mirrors NLE editor's saveItem so producers can edit
-  // old entries via History → "Open in Daily Entry" and persist the changes.
+  // ✅ Per-task Save — mirrors NLE editor's saveItem so producers can edit old
+  // entries via History → "Open in Daily Entry" and persist the changes.
+  // Syncs local state with the merged row so tasks saved from other
+  // browsers/machines appear immediately after saving.
   const saveProdTask = async (idx) => {
     if (isSavingRef.current || isAddingRef.current) return;
     isSavingRef.current = true;
@@ -289,8 +308,11 @@ export default function DailyEntry({ empId, dept, selDate }) {
       const it = prodItems[idx];
       if (!it.startTime || !it.endTime) { toast('⚠️ IN and OUT time required.', 'er'); return; }
       if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
-      const ok = await saveProdEntry(empId, selDate, dept, prodData);
-      if (ok) toast('✓ Saved');
+      const saved = await saveProdEntry(empId, selDate, dept, prodData);
+      if (saved) {
+        dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: saved }});
+        toast('✓ Saved');
+      }
     } finally {
       isSavingRef.current = false;
       setSavingIdx(null);
@@ -303,8 +325,11 @@ export default function DailyEntry({ empId, dept, selDate }) {
   };
 
   const saveProd = async () => {
-    const ok = await saveProdEntry(empId, selDate, dept, prodData);
-    if (ok) toast('✓ Saved');
+    const saved = await saveProdEntry(empId, selDate, dept, prodData);
+    if (saved) {
+      dispatch({ type:'UPDATE_PROD_DAILY', payload:{ empId, date:selDate, data: saved }});
+      toast('✓ Saved');
+    }
   };
 
   const visibleItems = search
@@ -343,7 +368,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
               const nt = NEWS_TYPES.find(n=>n.key===it.type)||NEWS_TYPES[0];
               const mins = tdiff(it.startTime, it.endTime);
               const prev = realIdx > 0 ? items[realIdx-1] : null;
-              const gapMins = prev ? tdiff(prev.endTime, it.startTime) : null;
+              const gapMins = prev ? rawGap(prev.endTime, it.startTime) : null;
               return (
                 <div key={realIdx}>
                   {gapMins > 0 && (
@@ -351,6 +376,13 @@ export default function DailyEntry({ empId, dept, selDate }) {
                       <span style={{ fontSize:11 }}>⏸</span>
                       <span style={{ fontSize:11, fontWeight:700, color:'var(--amber)', fontFamily:"'JetBrains Mono'" }}>Gap: {fmtMin(gapMins)}</span>
                       <span style={{ fontSize:10, color:'var(--mt)' }}>({prev.endTime} → {it.startTime})</span>
+                    </div>
+                  )}
+                  {gapMins !== null && gapMins < 0 && (
+                    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px', margin:'4px 0', background:'var(--rl)', borderLeft:'3px solid var(--red)', borderRadius:6 }}>
+                      <span style={{ fontSize:11 }}>⚠️</span>
+                      <span style={{ fontSize:11, fontWeight:700, color:'var(--red)', fontFamily:"'JetBrains Mono'" }}>Overlap: {fmtMin(-gapMins)}</span>
+                      <span style={{ fontSize:10, color:'var(--mt)' }}>(starts {it.startTime} before previous ends {prev.endTime})</span>
                     </div>
                   )}
                   <div className="ni-item">
@@ -391,7 +423,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
             const tMins = items.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
             const tWpts = items.reduce((s,it)=>{ const nt=NEWS_TYPES.find(n=>n.key===it.type)||{weight:1}; return s+nt.weight; },0);
             let totalGap=0;
-            for(let i=1;i<items.length;i++){const g=tdiff(items[i-1].endTime,items[i].startTime);if(g>0)totalGap+=g;}
+            for(let i=1;i<items.length;i++){const g=rawGap(items[i-1].endTime,items[i].startTime);if(g>0)totalGap+=g;}
             return (
               <div style={{ marginTop:16 }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'var(--mt)', letterSpacing:'.06em', marginBottom:12 }}>TODAY'S SUMMARY</div>
@@ -420,7 +452,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
             ) : (
               prodItems.map((it, idx) => {
                 const prev = idx > 0 ? prodItems[idx-1] : null;
-                const gapMins = prev ? tdiff(prev.endTime, it.startTime) : null;
+                const gapMins = prev ? rawGap(prev.endTime, it.startTime) : null;
                 const mins = tdiff(it.startTime, it.endTime);
                 return (
                   <div key={idx}>
@@ -429,6 +461,13 @@ export default function DailyEntry({ empId, dept, selDate }) {
                         <span style={{ fontSize:11 }}>⏸</span>
                         <span style={{ fontSize:11, fontWeight:700, color:'var(--amber)', fontFamily:"'JetBrains Mono'" }}>Gap: {fmtMin(gapMins)}</span>
                         <span style={{ fontSize:10, color:'var(--mt)' }}>({prev.endTime} → {it.startTime})</span>
+                      </div>
+                    )}
+                    {gapMins !== null && gapMins < 0 && (
+                      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px', margin:'4px 0', background:'var(--rl)', borderLeft:'3px solid var(--red)', borderRadius:6 }}>
+                        <span style={{ fontSize:11 }}>⚠️</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:'var(--red)', fontFamily:"'JetBrains Mono'" }}>Overlap: {fmtMin(-gapMins)}</span>
+                        <span style={{ fontSize:10, color:'var(--mt)' }}>(starts {it.startTime} before previous ends {prev.endTime})</span>
                       </div>
                     )}
                     <div className="ni-item">

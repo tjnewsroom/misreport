@@ -31,7 +31,7 @@ export const PROD_FIELDS = [
   {key:"rundown_changes",    label:"Rundown Changes",     icon:"🔄", color:"#dc2626"},
   {key:"PreRec",label:"PreRec",          color:"#be185d", weight:4,icon:"🎤"},
   {key:"TicTac",label:"TicTac",          color:"#be185d", weight:4,icon:"🎤"},
-  {key:"Repeat_ Cut",label:"Repeat_Cut",          color:"#be185d", weight:4,icon:"✂️"},
+  {key:"RepeatCut",label:"Repeat_Cut",          color:"#be185d", weight:4,icon:"✂️"},
 
 ];
 

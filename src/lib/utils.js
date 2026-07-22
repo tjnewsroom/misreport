@@ -7,6 +7,12 @@ export const fmtDate = s => {
   if (!s) return '';
   return new Date(s + 'T00:00').toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 };
+// Shift an ISO date string by n days — used by ◀ Prev / Next ▶ date navigation
+export const shiftDateISO = (iso, n) => {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 export const gwkStart = d => { const r = new Date(d); r.setDate(r.getDate() - r.getDay()); r.setHours(0,0,0,0); return r; };
 export const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
 export const tdiff = (t1, t2) => {

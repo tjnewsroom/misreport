@@ -115,11 +115,17 @@ export function EmployeeMonthlyPage() {
   const numDays = new Date(y, m, 0).getDate();
   const dayRows = Array.from({ length: numDays }, (_, i) => {
     const d = `${month}-${String(i+1).padStart(2,'0')}`;
-    const items = state.daily[empId]?.[d] || [];
     const att = state.attendance[empId]?.[d];
-    const wpts = items.reduce((s,it) => { const nt = NEWS_TYPES.find(n=>n.key===it.type)||{weight:1}; return s+nt.weight; }, 0);
-    const mins = items.reduce((s,it) => s + (tdiff(it.startTime,it.endTime) ?? it.manualMins ?? 0), 0);
-    return { date:d, dayNum:i+1, items:items.length, wpts, mins, present: !!att?.in_time };
+    if (dept === 'NLE Editor') {
+      const items = state.daily[empId]?.[d] || [];
+      const wpts = items.reduce((s,it) => { const nt = NEWS_TYPES.find(n=>n.key===it.type)||{weight:1}; return s+nt.weight; }, 0);
+      const mins = items.reduce((s,it) => s + (tdiff(it.startTime,it.endTime) ?? it.manualMins ?? 0), 0);
+      return { date:d, dayNum:i+1, items:items.length, wpts, mins, present: !!att?.in_time };
+    }
+    // Producer / Voice Over — count timed tasks (was always 0 before; part of why the page seemed unclear)
+    const tasks = state.prodDaily[empId]?.[d]?.tasks || [];
+    const mins = tasks.reduce((s,t) => s + (tdiff(t.startTime,t.endTime) ?? 0), 0);
+    return { date:d, dayNum:i+1, items:tasks.length, wpts:tasks.length, mins, present: !!att?.in_time };
   });
 
   const presentDays = dayRows.filter(r => r.present).length;
@@ -149,6 +155,16 @@ export function EmployeeMonthlyPage() {
             {allE.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
           <input type="month" className="inp inp-sm" value={month} onChange={e=>setMonth(e.target.value)} />
+        </div>
+      </div>
+
+      {/* ── What this page is for (client feedback #10) ── */}
+      <div className="card" style={{ marginBottom:20, background:'var(--bl)', border:'1px solid rgba(35,97,212,.2)' }}>
+        <div style={{ fontSize:12, color:'var(--blue)', lineHeight:1.7 }}>
+          <strong>ℹ️ Purpose:</strong> a full month's performance review for one employee at a time.
+          Pick an employee and a month above to see their attendance, total output, daily weighted-points trend,
+          score breakdown (Quality / Output / Reliability / Creativity → final score), and a day-by-day work table —
+          useful for monthly reviews, appraisals, and spotting productivity patterns.
         </div>
       </div>
 

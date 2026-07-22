@@ -431,10 +431,10 @@ input, select, button, textarea { font-family: inherit; outline: none; }
 /* Shift colour tokens */
 .s1{background:#fbbf2420;color:#c97d0e;font-weight:700}
 .s2{background:#60a5fa1a;color:#2361d4;font-weight:700}
-.sn{background:#7c6fff1a;color:#5b44d8}
+.sn{background:#e2e8f0;color:#000;font-weight:700}
 .sg2{background:#2dd4bf1a;color:#0d9488}
 .smn{background:#34d3991a;color:#16a34a}
-.sof{background:#f871711a;color:#d43228;font-weight:700}
+.sof{background:#ff00001a;color:#ff0000;font-weight:700}
 .scp{background:#818cf81a;color:#6366f1}
 .scl{background:#fb923c1a;color:#ea580c}
 .ssl{background:#f472b61a;color:#db2777}

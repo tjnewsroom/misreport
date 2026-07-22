@@ -87,10 +87,10 @@ const captureShift = async () => {
     const SH_COLOR = {
       '1ST':          { bg:'#dbeafe', color:'#1d4ed8' },
       '2ND':          { bg:'#ede9fe', color:'#6d28d9' },
-      'NIGHT':        { bg:'#0f172a', color:'#e2e8f0' },
+      'NIGHT':        { bg:'#e2e8f0', color:'#000000' },
       'GEN':          { bg:'#d1fae5', color:'#065f46' },
       'MN':           { bg:'#ccfbf1', color:'#0f766e' },
-      'OFF':          { bg:'#fee2e2', color:'#b91c1c' },
+      'OFF':          { bg:'#fee2e2', color:'#ff0000' },
       'CL':           { bg:'#fef9c3', color:'#854d0e' },
       'SL':           { bg:'#fef9c3', color:'#854d0e' },
       'PL':           { bg:'#fef9c3', color:'#854d0e' },

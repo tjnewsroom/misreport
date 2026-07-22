@@ -18,6 +18,13 @@ function AttendanceCard({ empId, dept, selDate }) {
   const { recordIN, recordOUT } = useData();
   const toast = useToast();
   const [welcomeInfo, setWelcomeInfo] = useState(null);
+  const [confirmOut, setConfirmOut] = useState(false); // client feedback: verify work before check-out
+
+  // Today's work summary for the check-out confirmation popup
+  const dayItems = dept === 'NLE Editor'
+    ? (state.daily[empId]?.[selDate] || [])
+    : (state.prodDaily[empId]?.[selDate]?.tasks || []);
+  const dayMins = dayItems.reduce((s, it) => s + (tdiff(it.startTime, it.endTime) ?? it.manualMins ?? 0), 0);
 
   const att = state.attendance[empId]?.[selDate] || {};
   const inT = att.in_time || null;
@@ -31,7 +38,9 @@ function AttendanceCard({ empId, dept, selDate }) {
     const { now } = await recordIN(empId, dept);
     setWelcomeInfo(now);
   };
-  const handleOUT = async () => {
+  const handleOUT = () => setConfirmOut(true); // show summary popup first
+  const confirmAndOUT = async () => {
+    setConfirmOut(false);
     await recordOUT(empId);
   };
 
@@ -42,6 +51,33 @@ function AttendanceCard({ empId, dept, selDate }) {
 
   return (
     <div className="card" style={{ marginBottom:16, background: inT&&outT ? 'var(--gl)' : inT ? 'rgba(251,191,36,.08)' : 'var(--surf)', border: `2px solid ${inT&&outT ? 'var(--green)' : inT ? 'var(--amber)' : 'var(--brd)'}` }}>
+      {/* ── Check-out confirmation popup (client feedback #1) ── */}
+      {confirmOut && (
+        <div onClick={()=>setConfirmOut(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'var(--surf)', borderRadius:16, padding:24, maxWidth:380, width:'100%', boxShadow:'0 10px 40px rgba(0,0,0,.3)', border:'1px solid var(--brd)' }}>
+            <div style={{ fontSize:32, textAlign:'center', marginBottom:8 }}>🔴</div>
+            <div style={{ fontSize:16, fontWeight:800, textAlign:'center', marginBottom:4 }}>Confirm Check Out</div>
+            <div style={{ fontSize:12, color:'var(--mt)', textAlign:'center', marginBottom:16 }}>Please verify your work for today before checking out.</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
+              <div style={{ background:'var(--surf2)', borderRadius:10, padding:'12px 8px', textAlign:'center' }}>
+                <div style={{ fontSize:24, fontWeight:800, color:'var(--blue)', fontFamily:"'JetBrains Mono'" }}>{dayItems.length}</div>
+                <div style={{ fontSize:10, color:'var(--mt)', fontWeight:600 }}>{dept==='NLE Editor' ? 'NEWS ITEMS' : 'TASKS'} TODAY</div>
+              </div>
+              <div style={{ background:'var(--surf2)', borderRadius:10, padding:'12px 8px', textAlign:'center' }}>
+                <div style={{ fontSize:24, fontWeight:800, color:'var(--green)', fontFamily:"'JetBrains Mono'" }}>{fmtMin(dayMins)}</div>
+                <div style={{ fontSize:10, color:'var(--mt)', fontWeight:600 }}>TOTAL TIME</div>
+              </div>
+            </div>
+            {dayItems.length===0 && (
+              <div style={{ background:'var(--al)', color:'var(--amber)', borderRadius:8, padding:'8px 12px', fontSize:11, fontWeight:600, marginBottom:14, textAlign:'center' }}>⚠️ No work entries recorded for today. Check out anyway?</div>
+            )}
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={()=>setConfirmOut(false)} style={{ flex:1, background:'var(--surf2)', border:'1px solid var(--brd)', color:'var(--txt)', borderRadius:9, padding:11, fontSize:13, fontWeight:700, cursor:'pointer' }}>Cancel</button>
+              <button onClick={confirmAndOUT} style={{ flex:1, background:'var(--red)', border:'none', color:'#fff', borderRadius:9, padding:11, fontSize:13, fontWeight:700, cursor:'pointer' }}>✓ Confirm OUT</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:8 }}>
         <div>
           <div style={{ fontSize:14, fontWeight:700 }}>Overall Attendance</div>

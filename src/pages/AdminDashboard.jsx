@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../hooks/useApp';
 import { useData } from '../hooks/useData';
-import { todayStr, fmtDate } from '../lib/utils';
+import { todayStr, fmtDate, shiftDateISO } from '../lib/utils';
 import DailyEntry from '../components/DailyEntry';
 import BreaksTab from '../components/BreaksTab';
 import ScoreTab from '../components/ScoreTab';
@@ -33,7 +33,7 @@ const buildNavSections = (hasEmpRecord) => {
     { id:'staff',    label:'Staff Mgmt',     icon:'👥' },
     { id:'quality',  label:'Quality',        icon:'🎯' },
     { id:'rel',      label:'Reliability',    icon:'📈' },
-    { id:'prod',     label:'Producers/VO',   icon:'🎙' },
+    // { id:'prod',  label:'Producers/VO',   icon:'🎙' }, // hidden per client feedback Jul 2026 — restore by uncommenting
   ]});
   sections.push({ label:'Reports', items:[
     { id:'search',     label:'Task Search',         icon:'🔍' },
@@ -56,6 +56,23 @@ const MOB_TABS = [
   { id:'search',    label:'Search',    icon:'🔍' },
   { id:'report',    label:'Report',    icon:'📄' },
 ];
+
+// ◀ Prev / Next ▶ day arrows — client feedback: easier navigation across all menus
+function DateNav({ selDate, onChange, maxToday }) {
+  const atMax = maxToday && selDate >= todayStr();
+  const btn = (dir, disabled) => (
+    <button
+      onClick={() => onChange(shiftDateISO(selDate, dir))}
+      disabled={disabled}
+      title={dir < 0 ? 'Previous day' : 'Next day'}
+      style={{ width:30, height:30, borderRadius:7, border:'1px solid var(--brd)',
+        background:'var(--surf2)', color: disabled ? 'var(--dim)' : 'var(--txt)',
+        cursor: disabled ? 'default' : 'pointer', fontSize:13, fontWeight:700, flexShrink:0 }}>
+      {dir < 0 ? '◀' : '▶'}
+    </button>
+  );
+  return <>{btn(-1, false)}{btn(1, atMax)}</>;
+}
 
 export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmployee, hasEmpRecord, theme, onToggleTheme }) {
   const { state, dispatch } = useApp();
@@ -111,6 +128,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
           </div>
         </div>
         <div className="topbar-right tb-desktop-only">
+          <DateNav selDate={selDate} onChange={setSelDate} />
           <input type="date" className="date-picker" value={selDate}
             onChange={e => setSelDate(e.target.value)} />
           <button className="icon-btn" onClick={onToggleTheme}>{theme==='dark'?'☀️':'🌙'}</button>
@@ -131,8 +149,11 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
         </div>
         <div style={{padding:'10px 12px',borderBottom:'1px solid var(--brd)'}}>
           <div className="lbl">Date</div>
-          <input type="date" className="inp inp-sm" value={selDate}
-            onChange={e => setSelDate(e.target.value)} style={{width:'100%'}}/>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <DateNav selDate={selDate} onChange={setSelDate} />
+            <input type="date" className="inp inp-sm" value={selDate}
+              onChange={e => setSelDate(e.target.value)} style={{flex:1,minWidth:0}}/>
+          </div>
         </div>
         <nav className="sidebar-nav">
           {navSections.map(section => (
@@ -158,6 +179,7 @@ export default function AdminDashboard({ user, empCode, onSignOut, onSwitchEmplo
       <main className="main-content">
         {/* Mobile controls bar */}
         <div className="mob-date-bar">
+          <DateNav selDate={selDate} onChange={setSelDate} />
           <input type="date" className="inp inp-sm" value={selDate}
             onChange={e => setSelDate(e.target.value)} style={{flex:1}}/>
           <button className="icon-btn" onClick={onToggleTheme}>{theme==='dark'?'☀️':'🌙'}</button>

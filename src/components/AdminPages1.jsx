@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useApp } from '../hooks/useApp';
-import { NEWS_TYPES, PROD_FIELDS, VO_FIELDS, DEPTS } from '../data/constants';
+import { NEWS_TYPES, PROD_FIELDS, VO_FIELDS, DEPTS, QUALITY_ITEMS } from '../data/constants';
 import { fmtDate, tdiff, fmtMin, shortN, deptColor } from '../lib/utils';
 
 // Raw signed gap in minutes — NO midnight wrap. Negative = overlap.
@@ -178,10 +179,66 @@ export function TodayWork({ selDate }) {
   const allE = state.emps.filter(e=>e.is_active);
   const term = search.toLowerCase().trim();
 
+  // ── Client feedback #4: export options ──────────────────────────────────
+  // Rows of one employee's work for the selected date
+  const empDayRows = (e) => {
+    if (e.dept === 'NLE Editor') {
+      return (state.daily[e.id]?.[selDate]||[]).map((it,i)=>{
+        const nt = NEWS_TYPES.find(n=>n.key===it.type)||NEWS_TYPES[0];
+        return [i+1, nt.label, it.desc||'', it.startTime||'', it.endTime||'', fmtMin(tdiff(it.startTime,it.endTime)??it.manualMins??0), nt.weight];
+      });
+    }
+    const pFields = e.dept==='News Producer'?PROD_FIELDS:VO_FIELDS;
+    return (state.prodDaily[e.id]?.[selDate]?.tasks||[]).map((t,i)=>{
+      const f = pFields.find(x=>x.key===t.type);
+      return [i+1, f?.label||t.type||'—', t.label||'', t.startTime||'', t.endTime||'', fmtMin(tdiff(t.startTime,t.endTime)??0), ''];
+    });
+  };
+
+  // Individual employee daily report
+  const exportEmpDaily = (e) => {
+    const rows = [
+      [`Daily Report — ${e.name} (${e.id}) · ${e.dept} · ${selDate}`], [],
+      ['#','Type / Activity','Description','IN','OUT','Time','Pts'],
+      ...empDayRows(e)
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Daily Report');
+    XLSX.writeFile(wb, `TJ_Daily_${e.name.replace(/\s/g,'_')}_${selDate}.xlsx`);
+  };
+
+  // Overall daily report — how many items/tasks each employee edited
+  const exportOverallDaily = () => {
+    const dayErr = (empId) => {
+      const qd = state.quality[empId]?.[selDate]||{};
+      let cnt=0, pts=0;
+      QUALITY_ITEMS.forEach(qi=>{const c=parseInt(qd[qi.key])||0; if(c>0&&qi.pts<0){cnt+=c;pts+=Math.abs(qi.pts)*c;}});
+      return { cnt, pts };
+    };
+    const rows = [[`Overall Daily Report · ${selDate}`], [], ['Dept','Name','ID','Items/Tasks','Total Time','Weighted Pts','Errors','Pts Deducted']];
+    DEPTS.forEach(dept => allE.filter(e=>e.dept===dept).forEach(e=>{
+      const er = dayErr(e.id);
+      if (e.dept==='NLE Editor') {
+        const items = state.daily[e.id]?.[selDate]||[];
+        const mins = items.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
+        const wpts = items.reduce((s,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type)||{weight:1};return s+nt.weight;},0);
+        rows.push([dept, e.name, e.id, items.length, fmtMin(mins), wpts, er.cnt||'', er.pts?`-${er.pts}`:'']);
+      } else {
+        const tasks = state.prodDaily[e.id]?.[selDate]?.tasks||[];
+        const mins = tasks.reduce((s,t)=>s+(tdiff(t.startTime,t.endTime)??0),0);
+        rows.push([dept, e.name, e.id, tasks.length, fmtMin(mins), '', er.cnt||'', er.pts?`-${er.pts}`:'']);
+      }
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Overall Daily');
+    XLSX.writeFile(wb, `TJ_Overall_Daily_${selDate}.xlsx`);
+  };
+
   return (
     <div>
       <div className="sec-hdr">
         <div><div className="sec-title">Today's Work</div><div className="sec-sub">{fmtDate(selDate)}</div></div>
+        <button className="btn btn-p btn-sm" onClick={exportOverallDaily}>📊 Export Overall Daily</button>
       </div>
       <div style={{marginBottom:16}}>
         <input className="inp" placeholder="🔍 Search by name, type, or description..." value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:420}}/>
@@ -221,6 +278,10 @@ export function TodayWork({ selDate }) {
               for(let i=1;i<pTasks.length;i++){const g=rawGap(pTasks[i-1].endTime,pTasks[i].startTime);if(g>0)pGap+=g;}
               const hasProdData = pTasks.length>0 || prodFields.some(f=>parseInt(pd[f.key])>0);
               const hasAnyData = items.length>0 || hasProdData;
+              // Errors logged for this employee on the selected date (Quality page counters)
+              const qd = state.quality[e.id]?.[selDate]||{};
+              let errCnt=0, errPts=0;
+              QUALITY_ITEMS.forEach(qi=>{const c=parseInt(qd[qi.key])||0; if(c>0&&qi.pts<0){errCnt+=c;errPts+=Math.abs(qi.pts)*c;}});
               const isOpen = !!openRows[e.id];
               return (
                 <div key={e.id} className="card" style={{marginBottom:10,borderLeft:`3px solid ${hasAnyData?dc:'var(--brd)'}`}}>
@@ -248,7 +309,14 @@ export function TodayWork({ selDate }) {
                             {state.attendance[e.id]?.[selDate]?.in_time && <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--green)'}}>✓</div><div style={{fontSize:9,color:'var(--mt)'}}>PRESENT</div></div>}
                           </>
                         ) : <div style={{fontSize:12,color:'var(--mt)',fontStyle:'italic'}}>No entry</div>}
+                        {errCnt>0 && <div style={{minWidth:72,flexShrink:0,textAlign:'right'}}><div style={{fontSize:16,fontWeight:800,color:'var(--red)',fontFamily:"'JetBrains Mono'"}}>−{errPts}</div><div style={{fontSize:9,color:'var(--red)',fontWeight:700}}>{errCnt} ERROR{errCnt>1?'S':''}</div></div>}
                       </div>
+                      {hasAnyData && (
+                        <button onClick={ev=>{ev.stopPropagation();exportEmpDaily(e);}} title="Export this employee's daily report"
+                          style={{border:'1px solid var(--brd)',background:'var(--surf2)',color:'var(--txt)',borderRadius:7,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0}}>
+                          📥 Export
+                        </button>
+                      )}
                       <span style={{transition:'transform .2s',transform:isOpen?'rotate(90deg)':'none',flexShrink:0,fontSize:16,cursor:'pointer'}}>▶</span>
                     </div>
                   </div>

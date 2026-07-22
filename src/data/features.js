@@ -15,7 +15,7 @@ export const GRANTABLE_FEATURES = [
   { id: 'staff',     label: 'Staff Mgmt',        icon: '👥', group: 'Management' },
   { id: 'quality',   label: 'Quality',           icon: '🎯', group: 'Management' },
   { id: 'rel',       label: 'Reliability',       icon: '📈', group: 'Management' },
-  { id: 'prod',      label: 'Producers/VO',      icon: '🎙', group: 'Management' },
+  // { id: 'prod',   label: 'Producers/VO',      icon: '🎙', group: 'Management' }, // hidden per client feedback Jul 2026
   // Reports
   { id: 'report',    label: 'Full Report',       icon: '📄', group: 'Reports' },
   { id: 'empmonth',  label: 'Employee Monthly',  icon: '📆', group: 'Reports' },

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import { sb } from '../lib/supabase';
@@ -68,6 +68,68 @@ export function QualityPage({ selDate }) {
   const [deptFilter, setDeptFilter] = useState('All');
   const [saving, setSaving] = useState({});
 
+  // ── Mistake log (client feedback #6): notes with date + team member,
+  //    filterable by employee + month, and tied to specific error types ──
+  const [notes, setNotes] = useState([]);
+  const [logEmp, setLogEmp] = useState('');                    // '' = all employees
+  const [logMonth, setLogMonth] = useState(selDate.slice(0,7));
+  const [errPopup, setErrPopup] = useState(null);              // { emp, qi } when + clicked
+  const [errNote, setErrNote] = useState('');
+  const uuidToName = useMemo(() => {
+    const m = {}; state.emps.forEach(e => { m[e._uuid] = e; }); return m;
+  }, [state.emps]);
+
+  const loadNotes = async () => {
+    const [y, m] = logMonth.split('-').map(Number);
+    const from = logMonth + '-01';
+    const to = `${logMonth}-${String(new Date(y, m, 0).getDate()).padStart(2,'0')}`;
+    let q = sb.from('quality_notes').select('*')
+      .gte('date', from).lte('date', to)
+      .order('date', { ascending: false }).order('created_at', { ascending: false }).limit(500);
+    if (logEmp) {
+      const emp = state.emps.find(e => e.id === logEmp);
+      if (emp?._uuid) q = q.eq('emp_id', emp._uuid);
+    }
+    const { data, error } = await q;
+    if (error) { console.error('quality_notes load:', error.message); return; }
+    setNotes(data || []);
+  };
+  useEffect(() => { loadNotes(); }, [logMonth, logEmp]);
+
+  // + clicked on an error counter → confirm with a note, save counter + note immediately
+  const confirmError = async (skipNote) => {
+    const { emp, qi } = errPopup;
+    const cur = state.quality[emp.id]?.[selDate] || {};
+    const newData = { ...cur, [qi.key]: (parseInt(cur[qi.key]) || 0) + 1 };
+    dispatch({ type: 'UPDATE_QUALITY', payload: { empId: emp.id, date: selDate, data: newData } });
+    setErrPopup(null);
+    const ok = await saveQuality(emp.id, selDate, newData);
+    if (!ok) { toast('❌ Counter save failed', 'er'); return; }
+    if (!skipNote && errNote.trim() && emp._uuid) {
+      const { error } = await sb.from('quality_notes').insert({
+        date: selDate, emp_id: emp._uuid, note: errNote.trim(), error_key: qi.key,
+      });
+      if (error) toast('Note save failed: ' + error.message, 'er');
+      else loadNotes();
+    }
+    toast(`✅ ${qi.label} logged for ${emp.name}`);
+  };
+
+  // − clicked → decrement and save immediately (notes stay; delete them from the log)
+  const decError = async (emp, qi, val) => {
+    if (val <= 0) return;
+    const cur = state.quality[emp.id]?.[selDate] || {};
+    const newData = { ...cur, [qi.key]: val - 1 };
+    dispatch({ type: 'UPDATE_QUALITY', payload: { empId: emp.id, date: selDate, data: newData } });
+    await saveQuality(emp.id, selDate, newData);
+  };
+
+  const deleteNote = async (id) => {
+    const { error } = await sb.from('quality_notes').delete().eq('id', id);
+    if (error) { toast('Delete failed: ' + error.message, 'er'); return; }
+    setNotes(n => n.filter(x => x.id !== id));
+  };
+
   const emps = state.emps.filter(e => e.is_active && (deptFilter === 'All' || e.dept === deptFilter));
 
   const getVal = (empId, key) => parseInt(state.quality[empId]?.[selDate]?.[key]) || 0;
@@ -86,12 +148,78 @@ export function QualityPage({ selDate }) {
 
   return (
     <div style={{ padding: 20 }}>
+      {/* ── Note popup when + is pressed on an error (client feedback) ── */}
+      {errPopup && (
+        <div onClick={() => setErrPopup(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surf)', borderRadius: 16, padding: 22, maxWidth: 420, width: '100%', border: '1px solid var(--brd)', boxShadow: '0 10px 40px rgba(0,0,0,.3)' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 2 }}>{errPopup.qi.icon} {errPopup.qi.label}</div>
+            <div style={{ fontSize: 12, color: 'var(--mt)', marginBottom: 12 }}>
+              <strong style={{ color: 'var(--red)' }}>{errPopup.emp.name}</strong> · {selDate} · {errPopup.qi.pts > 0 ? '+' : ''}{errPopup.qi.pts} pts
+            </div>
+            <textarea className="inp" rows={3} autoFocus placeholder="What mistake was made… (goes into the Mistake Log)"
+              value={errNote} onChange={e => setErrNote(e.target.value)}
+              style={{ width: '100%', resize: 'vertical', marginBottom: 14, fontSize: 13 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setErrPopup(null)} style={{ flex: 1, background: 'var(--surf2)', border: '1px solid var(--brd)', color: 'var(--txt)', borderRadius: 9, padding: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => confirmError(true)} style={{ flex: 1, background: 'var(--surf2)', border: '1px solid var(--brd)', color: 'var(--mt)', borderRadius: 9, padding: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Skip Note</button>
+              <button onClick={() => confirmError(false)} disabled={!errNote.trim()} style={{ flex: 1.4, background: errNote.trim() ? 'var(--red)' : 'var(--surf3)', border: 'none', color: errNote.trim() ? '#fff' : 'var(--dim)', borderRadius: 9, padding: 10, fontSize: 12, fontWeight: 700, cursor: errNote.trim() ? 'pointer' : 'default' }}>✓ Save Error + Note</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="sec-hdr">
         <div><div className="sec-title">🎯 Quality Errors</div><div className="sec-sub">{fmtDate(selDate)}</div></div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
         {['All', ...DEPTS].map(d => <Pill key={d} active={deptFilter === d} onClick={() => setDeptFilter(d)}>{d}</Pill>)}
       </div>
+
+      {/* ── Mistake log for tracking & review (client feedback #6) ── */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>📝 Mistake Log</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select className="inp inp-sm" value={logEmp} onChange={e => setLogEmp(e.target.value)} style={{ minWidth: 160 }}>
+              <option value="">All employees</option>
+              {state.emps.filter(e => e.is_active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+            <input type="month" className="inp inp-sm" value={logMonth} onChange={e => setLogMonth(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--mt)', marginBottom: 12 }}>Press ＋ on any error below — it asks for a note and logs here automatically. Use the filters above to see all mistakes of one employee for any month.</div>
+        {notes.length > 0 && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--mt)', marginBottom: 8 }}>
+            {notes.length} mistake{notes.length !== 1 ? 's' : ''} in {logMonth}
+            {(() => { const pts = notes.reduce((sum, n) => { const qi = QUALITY_ITEMS.find(q => q.key === n.error_key); return sum + (qi && qi.pts < 0 ? Math.abs(qi.pts) : 0); }, 0);
+              return pts > 0 ? <span style={{ color: 'var(--red)' }}> · −{pts} pts from logged errors</span> : null; })()}
+          </div>
+        )}
+        {notes.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--dim)', fontStyle: 'italic' }}>No mistakes logged for this selection.</div>
+        ) : (
+          <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+            {notes.map(n => {
+              const emp = uuidToName[n.emp_id];
+              return (
+                <div key={n.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--surf2)', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono'", color: 'var(--mt)', whiteSpace: 'nowrap', paddingTop: 2 }}>{n.date}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {emp?.name || 'Unknown'}<span style={{ fontWeight: 400, color: 'var(--mt)' }}> · {emp?.dept || ''}</span>
+                      {(() => { const qi = QUALITY_ITEMS.find(q => q.key === n.error_key);
+                        return qi ? <span style={{ fontSize: 10, fontWeight: 700, background: qi.sev === 'major' ? 'var(--rl)' : 'var(--al)', color: qi.sev === 'major' ? 'var(--red)' : 'var(--amber)', borderRadius: 999, padding: '2px 8px' }}>{qi.icon} {qi.label} · {qi.pts > 0 ? '+' : ''}{qi.pts} pts</span> : null; })()}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--txt)', marginTop: 2 }}>{n.note}</div>
+                  </div>
+                  <button onClick={() => deleteNote(n.id)} title="Delete note"
+                    style={{ border: 'none', background: 'transparent', color: 'var(--dim)', cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(360px,1fr))', gap: 16 }}>
         {emps.map(emp => {
           const deptItems = QUALITY_ITEMS.filter(qi => qi.depts.includes(emp.dept));
@@ -128,10 +256,10 @@ export function QualityPage({ selDate }) {
                           <span style={{ fontSize: 16, flexShrink: 0 }}>{qi.icon}</span>
                           <span style={{ flex: 1, fontSize: '.82rem', color: 'var(--txt)', fontWeight: val > 0 ? 600 : 400 }}>{qi.label}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <button onClick={() => handleChange(emp.id, qi.key, Math.max(0, val - 1))}
+                            <button onClick={() => decError(emp, qi, val)}
                               style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--brd)', background: 'var(--surf3)', color: 'var(--txt)', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
                             <span style={{ minWidth: 28, textAlign: 'center', fontWeight: 700, fontSize: '.9rem', color: val > 0 ? (sev === 'major' ? 'var(--red)' : 'var(--amber)') : 'var(--dim)', fontFamily: "'JetBrains Mono'" }}>{val}</span>
-                            <button onClick={() => handleChange(emp.id, qi.key, val + 1)}
+                            <button onClick={() => { setErrNote(''); setErrPopup({ emp, qi }); }}
                               style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--brd)', background: 'var(--surf3)', color: 'var(--txt)', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                           </div>
                         </div>
@@ -182,6 +310,24 @@ export function ReliabilityPage({ selDate }) {
       <div className="sec-hdr">
         <div><div className="sec-title">📈 Reliability Scores</div><div className="sec-sub">Month: {month}</div></div>
       </div>
+
+      {/* ── How Reliability works (client feedback #7) ── */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>ℹ️ How the Reliability module works</div>
+        <div style={{ fontSize: 12, color: 'var(--mt)', lineHeight: 1.7 }}>
+          Admin rates each employee <strong style={{ color: 'var(--txt)' }}>once per month</strong> on 5 reliability areas
+          (On-time Delivery, Emergency Response, Team Coordination, Night Shift Support, Pressure Handling) plus Creativity —
+          each on a <strong style={{ color: 'var(--txt)' }}>0–10 slider</strong>. Unrated areas default to 7 (Creativity defaults to 5).
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--mt)', lineHeight: 1.7, marginTop: 8 }}>
+          <strong style={{ color: 'var(--txt)' }}>Calculation:</strong> the 5 reliability ratings are averaged and scaled to 100
+          — e.g. an average of 8/10 = Reliability score 80. This contributes <strong style={{ color: 'var(--amber)' }}>20%</strong> of
+          the employee's final performance score. Creativity is scaled the same way (×10) and contributes
+          <strong style={{ color: 'var(--purple)' }}> 10%</strong>. The ring on each card shows the employee's overall final score
+          (Quality 40% + Output 30% + Reliability 20% + Creativity 10%).
+        </div>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(360px,1fr))', gap: 16 }}>
         {state.emps.filter(e => e.is_active).map(emp => {
           const sc = calcScore(emp.id, emp.dept, month, state.daily, state.prodDaily, state.quality, state.reliability);
@@ -346,6 +492,38 @@ export function TaskSearchPage({ empId: filterEmpId }) {
       const { data: rows, error: dbErr } = await query;
       if (dbErr) { setError('Search failed: ' + dbErr.message); setLoading(false); return; }
 
+      // ── Client feedback #9: also include Producer/VO tasks in results ─────
+      // producer_daily stores tasks as a JSON array, so text matching happens
+      // client-side after fetching rows joined with employees.
+      let prodFound = [];
+      if (typeFilter === 'all') { // typeFilter values are NLE news types — producer tasks only match "all"
+        const { data: pRows, error: pErr } = await sb
+          .from('producer_daily')
+          .select(`emp_id, date, dept, tasks, employees!inner ( emp_code, name, dept )`)
+          .order('date', { ascending: false })
+          .limit(3000);
+        if (pErr) { console.error('Producer search failed:', pErr.message); }
+        prodFound = (pRows || []).flatMap(r => {
+          const emp = r.employees;
+          if (!emp) return [];
+          const pf = emp.dept === 'News Producer' ? PROD_FIELDS : VO_FIELDS;
+          return (r.tasks || []).map(t => {
+            const f = pf.find(x => x.key === t.type);
+            if (term) {
+              const hay = [emp.name, emp.emp_code, emp.dept, t.type || '', f?.label || '', t.label || ''].join(' ').toLowerCase();
+              if (!hay.includes(term)) return null;
+            }
+            return {
+              empName: emp.name, empCode: emp.emp_code, dept: emp.dept,
+              date: r.date, type: t.type,
+              desc: t.label || '',
+              startTime: t.startTime || '', endTime: t.endTime || '',
+              nt: f ? { icon: f.icon, label: f.label, color: f.color } : null,
+            };
+          }).filter(Boolean);
+        });
+      }
+
       // ── Map and apply client-side name filter ─────────────────────────────
       const found = (rows || [])
         .map(r => {
@@ -372,7 +550,9 @@ export function TaskSearchPage({ empId: filterEmpId }) {
         })
         .filter(Boolean);
 
-      setResults(found);
+      // Merge NLE + Producer/VO results, newest first
+      const merged = [...found, ...prodFound].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+      setResults(merged);
     } catch (e) {
       setError('Unexpected error: ' + e.message);
     }
@@ -381,14 +561,14 @@ export function TaskSearchPage({ empId: filterEmpId }) {
 
   const exportXLS = () => {
     if (!results?.length) return;
-    const rows = [['Date','Employee','ID','News Type','Description','Start','End']];
-    results.forEach(r => rows.push([r.date, r.empName, r.empCode, r.nt?.label||r.type, r.desc, r.startTime, r.endTime]));
+    const rows = [['Date','Employee','ID','Dept','Type/Activity','Description','Start','End']];
+    results.forEach(r => rows.push([r.date, r.empName, r.empCode, r.dept, r.nt?.label||r.type, r.desc, r.startTime, r.endTime]));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Search Results');
     XLSX.writeFile(wb, `TJ_Search_${todayStr()}.xlsx`);
   };
 
-  const roleLabel = 'All NLE Editors — live from database';
+  const roleLabel = 'All NLE Editors + Producer/VO tasks — live from database';
 
   return (
     <div style={{ padding: 20 }}>
@@ -458,7 +638,7 @@ export function TaskSearchPage({ empId: filterEmpId }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--surf2)' }}>
-                      {['#', 'Date', 'Editor', 'ID', 'News Type', 'Description', 'IN', 'OUT'].map(h => (
+                      {['#', 'Date', 'Employee', 'ID', 'Dept', 'Type/Activity', 'Description', 'IN', 'OUT'].map(h => (
                         <th key={h} style={{ padding: '9px 12px', textAlign: 'left', color: 'var(--mt)', fontWeight: 700, fontSize: '.7rem', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -470,6 +650,7 @@ export function TaskSearchPage({ empId: filterEmpId }) {
                         <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.76rem', whiteSpace: 'nowrap' }}>{r.date}</td>
                         <td style={{ padding: '8px 12px', color: 'var(--txt)', fontWeight: 700, whiteSpace: 'nowrap' }}>{r.empName}</td>
                         <td style={{ padding: '8px 12px', color: 'var(--mt)', fontFamily: "'JetBrains Mono'", fontSize: '.74rem' }}>{r.empCode}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--mt)', fontSize: '.74rem', whiteSpace: 'nowrap' }}>{r.dept}</td>
                         <td style={{ padding: '8px 12px' }}>
                           <span style={{ background: (r.nt?.color||'#888')+'22', color: r.nt?.color||'#888', padding: '2px 8px', borderRadius: 5, fontSize: '.74rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {r.nt?.icon} {r.nt?.label||r.type}
@@ -555,6 +736,17 @@ export function ReportPage({ selDate }) {
       .some(emp => dates.some(d => (state.daily[emp.id]?.[d]||[]).some(it=>it.type===nt.key)))
   );
 
+  // ── Client feedback: per-column sorting — click any header (name, each item,
+  //    total, points, time, score…) to sort asc/desc ──
+  const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
+  const clickSort = (key) => setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+  const arrow = (k) => sort.key === k ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  const sortRows = (arr) => [...arr].sort((x, y) => {
+    const a = x.s[sort.key] ?? x.s.name, b = y.s[sort.key] ?? y.s.name;
+    const r = typeof a === 'string' ? a.localeCompare(String(b)) : a - b;
+    return sort.dir === 'asc' ? r : -r;
+  });
+
   const nleEmps  = state.emps.filter(e=>e.is_active&&e.dept==='NLE Editor');
   const prodEmps = state.emps.filter(e=>e.is_active&&e.dept==='News Producer');
   const voEmps   = state.emps.filter(e=>e.is_active&&e.dept==='Voice Over');
@@ -583,10 +775,48 @@ export function ReportPage({ selDate }) {
   const voTotalPresent = voEmps.reduce((s, emp) => s + dates.filter(d => state.attendance[emp.id]?.[d]?.in_time).length, 0);
   const voAvgScore = voEmps.length ? Math.round(voEmps.reduce((s, emp) => s + calcScore(emp.id, emp.dept, dates[dates.length-1].slice(0,7), state.daily, state.prodDaily, state.quality, state.reliability).final, 0) / voEmps.length) : 0;
 
-  const Th = ({children, center, color}) => (
-    <th style={{padding:'9px 10px',textAlign:center?'center':'left',color:color||'var(--mt)',fontWeight:700,
-      fontSize:'.72rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:50}}>
-      {children}
+  // Errors + point deductions for an employee across the report's date range
+  const rangeErr = (empId) => {
+    let cnt = 0, ded = 0;
+    dates.forEach(d => {
+      const q = state.quality[empId]?.[d] || {};
+      QUALITY_ITEMS.forEach(qi => { const c = parseInt(q[qi.key]) || 0; if (c > 0 && qi.pts < 0) { cnt += c; ded += Math.abs(qi.pts) * c; } });
+    });
+    return { cnt, ded };
+  };
+
+  // Precomputed per-employee rows — flat `s` map holds every sortable value
+  const nleData = sortRows(nleEmps.map(emp => {
+    const allItems = dates.flatMap(d=>state.daily[emp.id]?.[d]||[]);
+    const counts = {}; activeNLETypes.forEach(nt => { counts[nt.key] = allItems.filter(it=>it.type===nt.key).length; });
+    const wpts = allItems.reduce((s2,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type);return s2+(nt?.weight||0);},0);
+    const mins = allItems.reduce((s2,it)=>s2+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
+    const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+    const er = rangeErr(emp.id);
+    return { emp, s: { name: emp.name, ...counts, total: allItems.length, wpts, mins, errors: er.cnt, deduct: er.ded, score: sc.final } };
+  }));
+  const prodData = sortRows(prodEmps.map(emp => {
+    const vals = {}; PROD_FIELDS.forEach(f => { vals[f.key] = dates.reduce((s2,d)=>s2+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0); });
+    const present = dates.filter(d=>state.attendance[emp.id]?.[d]?.in_time).length;
+    const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+    const er = rangeErr(emp.id);
+    return { emp, s: { name: emp.name, ...vals, present, errors: er.cnt, deduct: er.ded, score: sc.final } };
+  }));
+  const voData = sortRows(voEmps.map(emp => {
+    const vals = {}; VO_FIELDS.forEach(f => { vals[f.key] = dates.reduce((s2,d)=>s2+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0); });
+    const present = dates.filter(d=>state.attendance[emp.id]?.[d]?.in_time).length;
+    const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
+    const er = rangeErr(emp.id);
+    return { emp, s: { name: emp.name, ...vals, present, errors: er.cnt, deduct: er.ded, score: sc.final } };
+  }));
+
+  const Th = ({children, center, color, sk}) => (
+    <th onClick={sk ? () => clickSort(sk) : undefined}
+      title={sk ? 'Click to sort' : undefined}
+      style={{padding:'9px 10px',textAlign:center?'center':'left',color:color||'var(--mt)',fontWeight:700,
+      fontSize:'.72rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:50,
+      cursor: sk ? 'pointer' : 'default', userSelect:'none'}}>
+      {children}{sk ? arrow(sk) : ''}
     </th>
   );
 
@@ -595,28 +825,31 @@ export function ReportPage({ selDate }) {
     try {
       const wb = XLSX.utils.book_new();
       // NLE sheet
-      const nleH = ['#','Name','ID',...activeNLETypes.map(n=>n.label),'Total','Pts','Time','Score'];
+      const nleH = ['#','Name','ID',...activeNLETypes.map(n=>n.label),'Total','Pts','Time','Errors','Deduct','Score'];
       const nleRows = [nleH];
-      nleEmps.forEach((emp,i) => {
+      nleData.forEach((row,i) => {
+        const emp = row.emp;
         const allItems = dates.flatMap(d=>state.daily[emp.id]?.[d]||[]);
         const wpts = allItems.reduce((s,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type);return s+(nt?.weight||0);},0);
         const mins = allItems.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
         const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
-        nleRows.push([i+1,emp.name,emp.id,...activeNLETypes.map(nt=>allItems.filter(it=>it.type===nt.key).length||'—'),allItems.length,wpts,fmtMin(mins),sc.final]);
+        nleRows.push([i+1,emp.name,emp.id,...activeNLETypes.map(nt=>allItems.filter(it=>it.type===nt.key).length||'—'),allItems.length,wpts,fmtMin(mins),row.s.errors||'—',row.s.deduct?`-${row.s.deduct}`:'—',sc.final]);
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(nleRows), 'NLE Editors');
       // Producer sheet
-      const pRows = [['#','Name','ID',...PROD_FIELDS.map(f=>f.label),'Score']];
-      prodEmps.forEach((emp,i) => {
+      const pRows = [['#','Name','ID',...PROD_FIELDS.map(f=>f.label),'Errors','Deduct','Score']];
+      prodData.forEach((row,i) => {
+        const emp = row.emp;
         const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
-        pRows.push([i+1,emp.name,emp.id,...PROD_FIELDS.map(f=>dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0)||'—'),sc.final]);
+        pRows.push([i+1,emp.name,emp.id,...PROD_FIELDS.map(f=>dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0)||'—'),row.s.errors||'—',row.s.deduct?`-${row.s.deduct}`:'—',sc.final]);
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pRows), 'News Producers');
       // VO sheet
-      const vRows = [['#','Name','ID',...VO_FIELDS.map(f=>f.label),'Score']];
-      voEmps.forEach((emp,i) => {
+      const vRows = [['#','Name','ID',...VO_FIELDS.map(f=>f.label),'Errors','Deduct','Score']];
+      voData.forEach((row,i) => {
+        const emp = row.emp;
         const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
-        vRows.push([i+1,emp.name,emp.id,...VO_FIELDS.map(f=>dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0)||'—'),sc.final]);
+        vRows.push([i+1,emp.name,emp.id,...VO_FIELDS.map(f=>dates.reduce((s,d)=>s+(parseInt(state.prodDaily[emp.id]?.[d]?.[f.key])||0),0)||'—'),row.s.errors||'—',row.s.deduct?`-${row.s.deduct}`:'—',sc.final]);
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(vRows), 'Voice Over');
       XLSX.writeFile(wb, `TJ_MIS_Report_${dateLabel.replace(/ /g,'_')}.xlsx`);
@@ -710,6 +943,7 @@ export function ReportPage({ selDate }) {
           📊 {exporting?'Exporting…':'Excel'}
         </button>
         <button className="btn btn-s" onClick={exportImage}>🖼 Image</button>
+        <span style={{marginLeft:'auto',fontSize:'.72rem',color:'var(--mt)',alignSelf:'center'}}>💡 Click any column heading to sort (▲ / ▼)</span>
       </div>
 
       {/* Report body */}
@@ -755,24 +989,27 @@ export function ReportPage({ selDate }) {
                 <thead>
                   <tr style={{background:'var(--surf2)'}}>
                     <Th>#</Th>
-                    <Th>Name</Th>
+                    <Th sk="name">Name</Th>
                     <Th>ID</Th>
                     {activeNLETypes.map(nt=>(
-                      <th key={nt.key} style={{padding:'10px 8px',textAlign:'center',color:nt.color,fontWeight:700,
+                      <th key={nt.key} onClick={()=>clickSort(nt.key)} title="Click to sort"
+                        style={{padding:'10px 8px',textAlign:'center',color:nt.color,fontWeight:700,
                         fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',
-                        whiteSpace:'nowrap',minWidth:58}}>
+                        whiteSpace:'nowrap',minWidth:58,cursor:'pointer',userSelect:'none'}}>
                         <div style={{fontSize:16,marginBottom:2}}>{nt.icon}</div>
-                        <div>{nt.label.replace(/\s/g,'_')}</div>
+                        <div>{nt.label.replace(/\s/g,'_')}{arrow(nt.key)}</div>
                       </th>
                     ))}
-                    <Th center>Total</Th>
-                    <Th center>Pts</Th>
-                    <Th center>Time</Th>
-                    <Th center>Score</Th>
+                    <Th center sk="total">Total</Th>
+                    <Th center sk="wpts">Pts</Th>
+                    <Th center sk="mins">Time</Th>
+                    <Th center sk="errors" color="var(--red)">Errors</Th>
+                    <Th center sk="deduct" color="var(--red)">Deduct</Th>
+                    <Th center sk="score">Score</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {nleEmps.map((emp,idx)=>{
+                  {nleData.map((row,idx)=>{ const emp=row.emp;
                     const allItems = dates.flatMap(d=>state.daily[emp.id]?.[d]||[]);
                     const wpts = allItems.reduce((s,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type);return s+(nt?.weight||0);},0);
                     const mins = allItems.reduce((s,it)=>s+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
@@ -794,6 +1031,8 @@ export function ReportPage({ selDate }) {
                         <td style={{...tdBase,textAlign:'center',fontWeight:700,color:'var(--blue)',fontFamily:"'JetBrains Mono'"}}>{allItems.length||'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:700,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{wpts||'—'}</td>
                         <td style={{...tdBase,textAlign:'center',color:'var(--green)',fontFamily:"'JetBrains Mono'",fontSize:'.78rem'}}>{mins>0?fmtMin(mins):'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:row.s.errors>0?700:400,color:row.s.errors>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.errors>0?row.s.errors:'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:row.s.deduct>0?700:400,color:row.s.deduct>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.deduct>0?`-${row.s.deduct}`:'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
                       </tr>
                     );
@@ -810,6 +1049,10 @@ export function ReportPage({ selDate }) {
                     <td style={{...tdBase,textAlign:'center',fontWeight:800,color:'var(--blue)',fontFamily:"'JetBrains Mono'"}}>{nleTotalItems||'—'}</td>
                     <td style={{...tdBase,textAlign:'center',fontWeight:800,color:'var(--amber)',fontFamily:"'JetBrains Mono'"}}>{nleTotalWpts||'—'}</td>
                     <td style={{...tdBase,textAlign:'center',fontWeight:700,color:'var(--green)',fontFamily:"'JetBrains Mono'",fontSize:'.78rem'}}>{nleTotalMins>0?fmtMin(nleTotalMins):'—'}</td>
+                    {(()=>{const c=nleData.reduce((a,r)=>a+r.s.errors,0),d=nleData.reduce((a,r)=>a+r.s.deduct,0);return <>
+                      <td style={{...tdBase,textAlign:'center',fontWeight:800,color:c>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{c>0?c:'—'}</td>
+                      <td style={{...tdBase,textAlign:'center',fontWeight:800,color:d>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{d>0?`-${d}`:'—'}</td>
+                    </>;})()}
                     <td style={{...tdBase,textAlign:'center',fontWeight:800,color:nleAvgScore>=80?'var(--green)':nleAvgScore>=60?'var(--amber)':'var(--red)',fontFamily:"'JetBrains Mono'"}}>{nleAvgScore}</td>
                   </tr>
                 </tfoot>
@@ -835,20 +1078,23 @@ export function ReportPage({ selDate }) {
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.8rem'}}>
                 <thead>
                   <tr style={{background:'var(--surf2)'}}>
-                    <Th>#</Th><Th>Name</Th><Th>ID</Th>
+                    <Th>#</Th><Th sk="name">Name</Th><Th>ID</Th>
                     {PROD_FIELDS.map(f=>(
-                      <th key={f.key} style={{padding:'10px 8px',textAlign:'center',color:f.color,fontWeight:700,
-                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:70}}>
+                      <th key={f.key} onClick={()=>clickSort(f.key)} title="Click to sort"
+                        style={{padding:'10px 8px',textAlign:'center',color:f.color,fontWeight:700,
+                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:70,cursor:'pointer',userSelect:'none'}}>
                         <div style={{fontSize:16,marginBottom:2}}>{f.icon}</div>
-                        <div>{f.label}</div>
+                        <div>{f.label}{arrow(f.key)}</div>
                       </th>
                     ))}
-                    <Th center>Present</Th>
-                    <Th center>Score</Th>
+                    <Th center sk="present">Present</Th>
+                    <Th center sk="errors" color="var(--red)">Errors</Th>
+                    <Th center sk="deduct" color="var(--red)">Deduct</Th>
+                    <Th center sk="score">Score</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {prodEmps.map((emp,idx)=>{
+                  {prodData.map((row,idx)=>{ const emp=row.emp;
                     const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
                     const gc = sc.final>=80?'var(--green)':sc.final>=60?'var(--amber)':'var(--red)';
                     const present = dates.filter(d=>state.attendance[emp.id]?.[d]?.in_time).length;
@@ -866,6 +1112,8 @@ export function ReportPage({ selDate }) {
                           );
                         })}
                         <td style={{...tdBase,textAlign:'center',color:present>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{present}/{dates.length}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:row.s.errors>0?700:400,color:row.s.errors>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.errors>0?row.s.errors:'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:row.s.deduct>0?700:400,color:row.s.deduct>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.deduct>0?`-${row.s.deduct}`:'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
                       </tr>
                     );
@@ -880,6 +1128,10 @@ export function ReportPage({ selDate }) {
                       <td key={i} style={{...tdBase,textAlign:'center',fontWeight:700,color:PROD_FIELDS[i].color,fontFamily:"'JetBrains Mono'"}}>{v>0?v:'—'}</td>
                     ))}
                     <td style={{...tdBase,textAlign:'center',fontWeight:700,color:prodTotalPresent>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{prodTotalPresent}/{prodEmps.length * dates.length}</td>
+                    {(()=>{const c=prodData.reduce((a,r)=>a+r.s.errors,0),d=prodData.reduce((a,r)=>a+r.s.deduct,0);return <>
+                      <td style={{...tdBase,textAlign:'center',fontWeight:800,color:c>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{c>0?c:'—'}</td>
+                      <td style={{...tdBase,textAlign:'center',fontWeight:800,color:d>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{d>0?`-${d}`:'—'}</td>
+                    </>;})()}
                     <td style={{...tdBase,textAlign:'center',fontWeight:800,color:prodAvgScore>=80?'var(--green)':prodAvgScore>=60?'var(--amber)':'var(--red)',fontFamily:"'JetBrains Mono'"}}>{prodAvgScore}</td>
                   </tr>
                 </tfoot>
@@ -905,20 +1157,23 @@ export function ReportPage({ selDate }) {
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.8rem'}}>
                 <thead>
                   <tr style={{background:'var(--surf2)'}}>
-                    <Th>#</Th><Th>Name</Th><Th>ID</Th>
+                    <Th>#</Th><Th sk="name">Name</Th><Th>ID</Th>
                     {VO_FIELDS.map(f=>(
-                      <th key={f.key} style={{padding:'10px 8px',textAlign:'center',color:f.color,fontWeight:700,
-                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:70}}>
+                      <th key={f.key} onClick={()=>clickSort(f.key)} title="Click to sort"
+                        style={{padding:'10px 8px',textAlign:'center',color:f.color,fontWeight:700,
+                        fontSize:'.7rem',borderBottom:'2px solid var(--brd)',background:'var(--surf2)',whiteSpace:'nowrap',minWidth:70,cursor:'pointer',userSelect:'none'}}>
                         <div style={{fontSize:16,marginBottom:2}}>{f.icon}</div>
-                        <div>{f.label}</div>
+                        <div>{f.label}{arrow(f.key)}</div>
                       </th>
                     ))}
-                    <Th center>Present</Th>
-                    <Th center>Score</Th>
+                    <Th center sk="present">Present</Th>
+                    <Th center sk="errors" color="var(--red)">Errors</Th>
+                    <Th center sk="deduct" color="var(--red)">Deduct</Th>
+                    <Th center sk="score">Score</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {voEmps.map((emp,idx)=>{
+                  {voData.map((row,idx)=>{ const emp=row.emp;
                     const sc = calcScore(emp.id,emp.dept,dates[dates.length-1].slice(0,7),state.daily,state.prodDaily,state.quality,state.reliability);
                     const gc = sc.final>=80?'var(--green)':sc.final>=60?'var(--amber)':'var(--red)';
                     const present = dates.filter(d=>state.attendance[emp.id]?.[d]?.in_time).length;
@@ -936,6 +1191,8 @@ export function ReportPage({ selDate }) {
                           );
                         })}
                         <td style={{...tdBase,textAlign:'center',color:present>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{present}/{dates.length}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:row.s.errors>0?700:400,color:row.s.errors>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.errors>0?row.s.errors:'—'}</td>
+                        <td style={{...tdBase,textAlign:'center',fontWeight:row.s.deduct>0?700:400,color:row.s.deduct>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.deduct>0?`-${row.s.deduct}`:'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
                       </tr>
                     );
@@ -950,6 +1207,10 @@ export function ReportPage({ selDate }) {
                       <td key={i} style={{...tdBase,textAlign:'center',fontWeight:700,color:VO_FIELDS[i].color,fontFamily:"'JetBrains Mono'"}}>{v>0?v:'—'}</td>
                     ))}
                     <td style={{...tdBase,textAlign:'center',fontWeight:700,color:voTotalPresent>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{voTotalPresent}/{voEmps.length * dates.length}</td>
+                    {(()=>{const c=voData.reduce((a,r)=>a+r.s.errors,0),d=voData.reduce((a,r)=>a+r.s.deduct,0);return <>
+                      <td style={{...tdBase,textAlign:'center',fontWeight:800,color:c>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{c>0?c:'—'}</td>
+                      <td style={{...tdBase,textAlign:'center',fontWeight:800,color:d>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{d>0?`-${d}`:'—'}</td>
+                    </>;})()}
                     <td style={{...tdBase,textAlign:'center',fontWeight:800,color:voAvgScore>=80?'var(--green)':voAvgScore>=60?'var(--amber)':'var(--red)',fontFamily:"'JetBrains Mono'"}}>{voAvgScore}</td>
                   </tr>
                 </tfoot>

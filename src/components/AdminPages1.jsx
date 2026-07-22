@@ -202,6 +202,18 @@ export function TodayWork({ selDate }) {
       ['#','Type / Activity','Description','IN','OUT','Time','Pts'],
       ...empDayRows(e)
     ];
+    // Errors section — from the Quality page counters for this date
+    const qd = state.quality[e.id]?.[selDate]||{};
+    const errRows = QUALITY_ITEMS
+      .filter(qi => qi.pts < 0 && (parseInt(qd[qi.key])||0) > 0)
+      .map(qi => { const c = parseInt(qd[qi.key]); return [qi.label, c, `${qi.pts} pts each`, -Math.abs(qi.pts)*c]; });
+    rows.push([]);
+    if (errRows.length) {
+      const totalDed = errRows.reduce((a,r)=>a+Math.abs(r[3]),0);
+      rows.push(['ERRORS ON THIS DATE'], ['Error Type','Count','Points Each','Deducted'], ...errRows, ['','','TOTAL DEDUCTED', -totalDed]);
+    } else {
+      rows.push(['ERRORS ON THIS DATE','None ✓']);
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Daily Report');
     XLSX.writeFile(wb, `TJ_Daily_${e.name.replace(/\s/g,'_')}_${selDate}.xlsx`);

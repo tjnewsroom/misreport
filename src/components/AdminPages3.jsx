@@ -736,6 +736,9 @@ export function ReportPage({ selDate }) {
       .some(emp => dates.some(d => (state.daily[emp.id]?.[d]||[]).some(it=>it.type===nt.key)))
   );
 
+  // Score breakdown popup — click any Score value to see the calculation
+  const [scoreInfo, setScoreInfo] = useState(null); // { emp, sc }
+
   // ── Client feedback: per-column sorting — click any header (name, each item,
   //    total, points, time, score…) to sort asc/desc ──
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -908,6 +911,44 @@ export function ReportPage({ selDate }) {
 
   return (
     <div style={{padding:20}}>
+      {/* ── Score calculation breakdown popup ── */}
+      {scoreInfo && (() => {
+        const { emp, sc } = scoreInfo;
+        const scMonth = dates[dates.length-1].slice(0,7);
+        const qDed = 100 - sc.qualityScore;
+        const parts = [
+          { l:'Quality',     v:sc.qualityScore,    w:40, c:'var(--green)',  d:qDed>0?`100 − ${qDed} pts of errors this month`:'100 — no errors this month' },
+          { l:'Output',      v:sc.outputScore,     w:30, c:'var(--blue)',   d:`${sc.wpts} weighted pts ÷ 1.5 (max 100)` },
+          { l:'Reliability', v:sc.reliScore,       w:20, c:'var(--amber)',  d:'admin monthly ratings (0–10 avg × 10)' },
+          { l:'Creativity',  v:sc.creativityScore, w:10, c:'var(--purple)', d:'admin monthly rating (0–10 × 10)' },
+        ];
+        return (
+          <div onClick={()=>setScoreInfo(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:'var(--surf)',borderRadius:16,padding:22,maxWidth:440,width:'100%',border:'1px solid var(--brd)',boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
+              <div style={{fontSize:14,fontWeight:800,marginBottom:2}}>🧮 Score Calculation — {emp.name}</div>
+              <div style={{fontSize:11,color:'var(--mt)',marginBottom:14}}>Score is always monthly · showing {scMonth}</div>
+              {parts.map(pt=>(
+                <div key={pt.l} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:'var(--surf2)',marginBottom:6}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:700,color:pt.c}}>{pt.l} <span style={{color:'var(--mt)',fontWeight:400}}>· {pt.w}% weight</span></div>
+                    <div style={{fontSize:10.5,color:'var(--mt)',marginTop:1}}>{pt.d}</div>
+                  </div>
+                  <div style={{textAlign:'right',fontFamily:"'JetBrains Mono'",whiteSpace:'nowrap'}}>
+                    <span style={{fontSize:13,fontWeight:800,color:pt.c}}>{pt.v}</span>
+                    <span style={{fontSize:11,color:'var(--mt)'}}> × {pt.w/100} = </span>
+                    <span style={{fontSize:13,fontWeight:800,color:'var(--txt)'}}>{Math.round(pt.v*pt.w)/100}</span>
+                  </div>
+                </div>
+              ))}
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',borderRadius:8,background:'var(--bl)',marginTop:4}}>
+                <span style={{fontSize:12,fontWeight:800,color:'var(--blue)'}}>FINAL SCORE (rounded)</span>
+                <span style={{fontSize:18,fontWeight:800,color:'var(--blue)',fontFamily:"'JetBrains Mono'"}}>{sc.final}/100</span>
+              </div>
+              <button onClick={()=>setScoreInfo(null)} style={{width:'100%',marginTop:12,background:'var(--surf2)',border:'1px solid var(--brd)',color:'var(--txt)',borderRadius:9,padding:10,fontSize:12,fontWeight:700,cursor:'pointer'}}>Close</button>
+            </div>
+          </div>
+        );
+      })()}
       <div style={{marginBottom:20}}>
         <div style={{fontSize:'1.2rem',fontWeight:800,color:'var(--txt)',letterSpacing:'-.3px'}}>Full MIS Report</div>
         <div style={{fontSize:'.82rem',color:'var(--mt)',marginTop:2}}>{dateLabel} Report</div>
@@ -1033,7 +1074,7 @@ export function ReportPage({ selDate }) {
                         <td style={{...tdBase,textAlign:'center',color:'var(--green)',fontFamily:"'JetBrains Mono'",fontSize:'.78rem'}}>{mins>0?fmtMin(mins):'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:row.s.errors>0?700:400,color:row.s.errors>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.errors>0?row.s.errors:'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:row.s.deduct>0?700:400,color:row.s.deduct>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.deduct>0?`-${row.s.deduct}`:'—'}</td>
-                        <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
+                        <td onClick={()=>setScoreInfo({emp,sc})} title="Click to see how this score is calculated" style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'",cursor:'pointer',textDecoration:'underline dotted',textUnderlineOffset:3}}>{sc.final}</td>
                       </tr>
                     );
                   })}
@@ -1114,7 +1155,7 @@ export function ReportPage({ selDate }) {
                         <td style={{...tdBase,textAlign:'center',color:present>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{present}/{dates.length}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:row.s.errors>0?700:400,color:row.s.errors>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.errors>0?row.s.errors:'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:row.s.deduct>0?700:400,color:row.s.deduct>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.deduct>0?`-${row.s.deduct}`:'—'}</td>
-                        <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
+                        <td onClick={()=>setScoreInfo({emp,sc})} title="Click to see how this score is calculated" style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'",cursor:'pointer',textDecoration:'underline dotted',textUnderlineOffset:3}}>{sc.final}</td>
                       </tr>
                     );
                   })}
@@ -1193,7 +1234,7 @@ export function ReportPage({ selDate }) {
                         <td style={{...tdBase,textAlign:'center',color:present>0?'var(--green)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{present}/{dates.length}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:row.s.errors>0?700:400,color:row.s.errors>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.errors>0?row.s.errors:'—'}</td>
                         <td style={{...tdBase,textAlign:'center',fontWeight:row.s.deduct>0?700:400,color:row.s.deduct>0?'var(--red)':'var(--dim)',fontFamily:"'JetBrains Mono'"}}>{row.s.deduct>0?`-${row.s.deduct}`:'—'}</td>
-                        <td style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'"}}>{sc.final}</td>
+                        <td onClick={()=>setScoreInfo({emp,sc})} title="Click to see how this score is calculated" style={{...tdBase,textAlign:'center',fontWeight:800,color:gc,fontFamily:"'JetBrains Mono'",cursor:'pointer',textDecoration:'underline dotted',textUnderlineOffset:3}}>{sc.final}</td>
                       </tr>
                     );
                   })}

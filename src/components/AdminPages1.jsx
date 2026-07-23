@@ -246,11 +246,63 @@ export function TodayWork({ selDate }) {
     XLSX.writeFile(wb, `TJ_Overall_Daily_${selDate}.xlsx`);
   };
 
+  // Detailed overall report — summary sheet + every employee's full task list
+  const exportDetailedDaily = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: same totals as the summary export
+    const dayErr = (empId) => {
+      const qd = state.quality[empId]?.[selDate]||{};
+      let cnt=0, pts=0;
+      QUALITY_ITEMS.forEach(qi=>{const c=parseInt(qd[qi.key])||0; if(c>0&&qi.pts<0){cnt+=c;pts+=Math.abs(qi.pts)*c;}});
+      return { cnt, pts };
+    };
+    const sum = [[`Overall Daily Report (Detailed) · ${selDate}`], [], ['Dept','Name','ID','Items/Tasks','Total Time','Weighted Pts','Errors','Pts Deducted']];
+    DEPTS.forEach(dept => allE.filter(e=>e.dept===dept).forEach(e=>{
+      const er = dayErr(e.id);
+      if (e.dept==='NLE Editor') {
+        const items = state.daily[e.id]?.[selDate]||[];
+        const mins = items.reduce((a,it)=>a+(tdiff(it.startTime,it.endTime)??it.manualMins??0),0);
+        const wpts = items.reduce((a,it)=>{const nt=NEWS_TYPES.find(n=>n.key===it.type)||{weight:1};return a+nt.weight;},0);
+        sum.push([dept, e.name, e.id, items.length, fmtMin(mins), wpts, er.cnt||'', er.pts?`-${er.pts}`:'']);
+      } else {
+        const tasks = state.prodDaily[e.id]?.[selDate]?.tasks||[];
+        const mins = tasks.reduce((a,t)=>a+(tdiff(t.startTime,t.endTime)??0),0);
+        sum.push([dept, e.name, e.id, tasks.length, fmtMin(mins), '', er.cnt||'', er.pts?`-${er.pts}`:'']);
+      }
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sum), 'Summary');
+
+    // Sheet 2: every employee's work, one after another
+    const det = [[`All Employees — Detailed Work · ${selDate}`], []];
+    DEPTS.forEach(dept => allE.filter(e=>e.dept===dept).forEach(e=>{
+      const body = empDayRows(e);
+      const er = dayErr(e.id);
+      det.push([`${e.name} (${e.id}) · ${dept}`]);
+      if (body.length) {
+        det.push(['#','Type / Activity','Description','IN','OUT','Time','Pts'], ...body);
+      } else {
+        det.push(['No work entries for this date']);
+      }
+      const qd = state.quality[e.id]?.[selDate]||{};
+      const errs = QUALITY_ITEMS.filter(qi=>qi.pts<0&&(parseInt(qd[qi.key])||0)>0)
+        .map(qi=>`${qi.label} ×${parseInt(qd[qi.key])}`);
+      det.push(errs.length ? [`Errors: ${errs.join(', ')} — total ${-er.pts} pts`] : ['Errors: None']);
+      det.push([]);
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), 'Detailed');
+
+    XLSX.writeFile(wb, `TJ_Overall_Daily_Detailed_${selDate}.xlsx`);
+  };
+
   return (
     <div>
       <div className="sec-hdr">
         <div><div className="sec-title">Today's Work</div><div className="sec-sub">{fmtDate(selDate)}</div></div>
-        <button className="btn btn-p btn-sm" onClick={exportOverallDaily}>📊 Export Overall Daily</button>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button className="btn btn-s btn-sm" onClick={exportOverallDaily} title="One row per employee — totals only">📊 Export Totals</button>
+          <button className="btn btn-p btn-sm" onClick={exportDetailedDaily} title="Totals sheet + every employee's full task list">📋 Export Detailed</button>
+        </div>
       </div>
       <div style={{marginBottom:16}}>
         <input className="inp" placeholder="🔍 Search by name, type, or description..." value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:420}}/>

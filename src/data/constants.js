@@ -80,6 +80,7 @@ export const SHIFT_OPTS = [
   {v:"",                   lbl:"— —",               cls:"sem"},
   {v:"1ST",                lbl:"1ST",               cls:"s1"},
   {v:"2ND",                lbl:"2ND",               cls:"s2"},
+  {v:"2ND-12PM",           lbl:"2ND-12PM",          cls:"s3"},
   {v:"NIGHT",              lbl:"NIGHT",             cls:"sn"},
   {v:"GEN",                lbl:"GEN",               cls:"sg2"},
   {v:"MN",                 lbl:"MN",                cls:"smn"},
@@ -97,7 +98,7 @@ export const SHIFT_OPTS = [
 ];
 
 export const SH_CLS = {
-  "1ST":"s1","2ND":"s2","NIGHT":"sn","GEN":"sg2","MN":"smn",
+  "1ST":"s1","2ND":"s2","2ND-12PM":"s3","NIGHT":"sn","GEN":"sg2","MN":"smn",
   "OFF":"sof","COMP_HOL":"scp","COMP_WEEK":"scp",
   "CL":"scl","SL":"ssl","PL":"spl","LOP":"slp","HOL":"shl",
   "OFFREQUESTED":"sswap","1STSHIFTREQUESTED":"sswap","2NDSHIFTREQUESTED":"sswap"

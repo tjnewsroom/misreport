@@ -1,7 +1,7 @@
 export const NEWS_TYPES = [
-  {key:"hl",       label:"Headlines",           color:"#059669", weight:2,  icon:"📰"},
   {key:"vo_sot",   label:"Rundown Vo's",         color:"#2563eb", weight:4,  icon:"✂️"},
-  {key:"bite",     label:"Bite",                 color:"#2563eb", weight:2,  icon:"🎙"},
+  {key:"hl",       label:"Headlines",           color:"#059669", weight:2,  icon:"📰"},
+    {key:"bite",     label:"Bite",                 color:"#2563eb", weight:2,  icon:"🎙"},
   {key:"minitalks",label:"Mini Talks",           color:"#2563eb", weight:4,  icon:"🎙"},
   {key:"breaking", label:"Breaking",             color:"#dc2626", weight:2,  icon:"⚡"},
   {key:"visuals_breaking",label:"Visuals Breaking",color:"#dc2626",weight:4, icon:"⚡"},

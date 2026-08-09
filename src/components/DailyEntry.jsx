@@ -215,6 +215,10 @@ export default function DailyEntry({ empId, dept, selDate }) {
     try {
       if (items.length) {
         const last = items[items.length-1];
+        if (!last.type) {
+          toast('⚠️ Select a news type for Task '+items.length+' before adding new.', 'er');
+          return;
+        }
         if (!last.startTime || !last.endTime) {
           toast('⚠️ IN and OUT time required for Task '+items.length+' before adding new.', 'er');
           return;
@@ -230,10 +234,10 @@ export default function DailyEntry({ empId, dept, selDate }) {
         const updatedItems = items.map((it, i) =>
           i === items.length - 1 ? { ...it, _id: last._id, _clientKey: last._clientKey } : it
         );
-        const newItems = [...updatedItems, { type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
+        const newItems = [...updatedItems, { type:'', desc:'', startTime:'', endTime:'', manualMins:0 }];
         dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
       } else {
-        const newItems = [{ type:'vo_sot', desc:'', startTime:'', endTime:'', manualMins:0 }];
+        const newItems = [{ type:'', desc:'', startTime:'', endTime:'', manualMins:0 }];
         dispatch({ type:'UPDATE_DAILY_ITEM', payload:{ empId, date:selDate, items:newItems }});
       }
     } finally {
@@ -249,6 +253,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
     setSavingIdx(idx);
     try {
       const it = items[idx];
+      if (!it.type) { toast('⚠️ Select a news type before saving.', 'er'); return; }
       if (!it.startTime || !it.endTime) { toast('⚠️ IN and OUT time required.', 'er'); return; }
       if (it.endTime <= it.startTime) { toast('⚠️ OUT must be ≥ IN.', 'er'); return; }
       const ok = await saveNLEItem(empId, selDate, it);
@@ -425,6 +430,7 @@ export default function DailyEntry({ empId, dept, selDate }) {
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap' }}>
                       <div style={{ width:24, height:24, borderRadius:6, background:nt.color, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, flexShrink:0 }}>{realIdx+1}</div>
                       <select className="inp inp-sm" style={{ flex:1, maxWidth:180 }} value={it.type} onChange={e=>updateItem(realIdx,'type',e.target.value)}>
+                        <option value="">— Select item —</option>
                         {NEWS_TYPES.map(n=><option key={n.key} value={n.key}>{n.icon} {n.label} ×{n.weight}</option>)}
                       </select>
                       <input className="inp inp-sm" placeholder="Headline / Description" value={it.desc||''} style={{ flex:2, minWidth:160 }} onChange={e=>updateItem(realIdx,'desc',e.target.value)} />

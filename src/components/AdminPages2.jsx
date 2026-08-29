@@ -99,7 +99,7 @@ const captureShift = async () => {
       'COMP_WEEK':    { bg:'#e0e7ff', color:'#3730a3' },
       '1STSHIFTREQUESTED':  { bg:'#bfdbfe', color:'#1e40af' },
       '2NDSHIFTREQUESTED':  { bg:'#ddd6fe', color:'#5b21b6' },
-      'OFFREQUESTED':       { bg:'#fde8e8', color:'#ff0000' },
+      'OFFREQUESTED':        { bg:'#fee2e2', color:'#ff0000' },
     };
 
     const cell = (txt, style='', isHdr=false) => {

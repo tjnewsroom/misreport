@@ -92,7 +92,7 @@ export const SHIFT_OPTS = [
   {v:"PL",                 lbl:"PL",                cls:"spl"},
   {v:"LOP",                lbl:"LOP",               cls:"slp"},
   {v:"HOL",                lbl:"HOL",               cls:"shl"},
-  {v:"OFFREQUESTED",       lbl:"OFFREQUESTED",      cls:"sswap"},
+  {v:"OFFREQUESTED",       lbl:"OFFREQUESTED",      cls:"sof"},
   {v:"1STSHIFTREQUESTED",  lbl:"1STSHIFTREQUESTED", cls:"sswap"},
   {v:"2NDSHIFTREQUESTED",  lbl:"2NDSHIFTREQUESTED", cls:"sswap"},
 ];
@@ -101,7 +101,7 @@ export const SH_CLS = {
   "1ST":"s1","2ND":"s2","2ND-12PM":"s3","NIGHT":"sn","GEN":"sg2","MN":"smn",
   "OFF":"sof","COMP_HOL":"scp","COMP_WEEK":"scp",
   "CL":"scl","SL":"ssl","PL":"spl","LOP":"slp","HOL":"shl",
-  "OFFREQUESTED":"sswap","1STSHIFTREQUESTED":"sswap","2NDSHIFTREQUESTED":"sswap"
+  "OFFREQUESTED":"sof","1STSHIFTREQUESTED":"sswap","2NDSHIFTREQUESTED":"sswap"
 };
 
 export const DEPTS = ["NLE Editor","News Producer","Voice Over"];

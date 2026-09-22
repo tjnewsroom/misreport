@@ -387,6 +387,28 @@ export function StaffManagement() {
     if(state.emps.find(e=>e.id===code))return toast('Code already exists','er');
     const{data,error}=await sb.from('employees').insert({emp_code:code,name,dept,is_active:true}).select().single();
     if(error)return toast('Failed: '+error.message,'er');
+    const role = dept.toUpperCase();
+    const{data:departmentSample,error:departmentError}=await sb
+      .from('team_members')
+      .select('department_id')
+      .eq('role',role)
+      .limit(1)
+      .maybeSingle();
+    if(departmentError||!departmentSample?.department_id){
+      await sb.from('employees').delete().eq('id',data.id);
+      return toast(`Employee not added: no team_members department found for ${role}`, 'er');
+    }
+    const{error:memberError}=await sb.from('team_members').insert({
+      employee_id:code,
+      full_name:name,
+      role,
+      department_id:departmentSample.department_id,
+      default_shift:'GEN'
+    });
+    if(memberError){
+      await sb.from('employees').delete().eq('id',data.id);
+      return toast('Employee sync failed: '+memberError.message,'er');
+    }
     dispatch({type:'ADD_EMP',payload:{id:code,name,dept,is_active:true,_uuid:data.id}});
     setNewEmp({code:'',name:'',dept:'NLE Editor'}); setShowAdd(false);
     toast('✓ Employee added');

@@ -387,7 +387,7 @@ export function StaffManagement() {
     if(state.emps.find(e=>e.id===code))return toast('Code already exists','er');
     const{data,error}=await sb.from('employees').insert({emp_code:code,name,dept,is_active:true}).select().single();
     if(error)return toast('Failed: '+error.message,'er');
-    const role = dept.toUpperCase();
+    const role = dept === 'NLE Editor' ? 'VIDEO EDITORS' : dept.toUpperCase();
     const{data:departmentSample,error:departmentError}=await sb
       .from('team_members')
       .select('department_id')
